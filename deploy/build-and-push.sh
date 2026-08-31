@@ -38,7 +38,17 @@ fi
 docker buildx inspect playlist-builder >/dev/null 2>&1 \
   || docker buildx create --name playlist-builder --driver docker-container >/dev/null
 
-echo "==> building $IMAGE:$TAG for $PLATFORMS"
+# Stamped here rather than in the Dockerfile: these change every build, so a
+# LABEL line would invalidate the layer cache on each run.
+REVISION="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+if ! git diff --quiet HEAD 2>/dev/null; then
+  echo "warning: working tree is dirty; image.revision=$REVISION will not"
+  echo "         describe exactly what is in this image" >&2
+fi
+
+echo "==> building $IMAGE:$TAG for $PLATFORMS (rev ${REVISION:0:12})"
 
 # --push, not --load: a multi-arch manifest cannot live in the local image
 # store, so it goes straight to the registry either way.
@@ -47,6 +57,9 @@ docker buildx build \
   --platform "$PLATFORMS" \
   --tag "$IMAGE:$TAG" \
   --tag "$IMAGE:latest" \
+  --label "org.opencontainers.image.version=$TAG" \
+  --label "org.opencontainers.image.revision=$REVISION" \
+  --label "org.opencontainers.image.created=$CREATED" \
   --push \
   web-ui
 

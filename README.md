@@ -11,7 +11,43 @@ audio from YouTube.
 | [`deploy/`](deploy) | **Server / NAS deployment.** A prebuilt public image on GHCR. One-file compose for CasaOS, ZimaOS, Portainer and Dockge; an `.env`-driven one for a plain shell. |
 | [`cli/`](cli) | **Historical.** The original command-line script and a record of why the project moved to a web UI. Not maintained. |
 
-## 🚀 Quick start
+## 🚀 Install
+
+The image is published publicly on GHCR — nothing to build, no login to pull:
+
+```
+ghcr.io/roncanfil/spotify-playlists-to-mp3:latest
+```
+
+Supports `linux/amd64` and `linux/arm64`.
+
+### CasaOS / ZimaOS / Portainer / Dockge
+
+Paste [`deploy/casaos/docker-compose.yml`](deploy/casaos/docker-compose.yml)
+into the UI's custom-install / stack editor. It needs no `.env` — every value is
+literal, with four `EDIT` markers for the port, password, Spotify client ID and
+volume paths.
+
+### Any Linux box with docker compose
+
+```bash
+mkdir -p ~/playlist-downloader && cd ~/playlist-downloader
+curl -fsSLO https://raw.githubusercontent.com/roncanfil/spotify-playlists-to-MP3/main/deploy/casaos/docker-compose.yml
+nano docker-compose.yml     # set the volume paths and a password
+docker compose up -d
+```
+
+Then open `http://<host>:8765`.
+
+On **Proxmox**, run that inside a Docker LXC or VM — nothing here needs
+privileged mode or host networking.
+
+Deployment details, updating, and the Spotify SSH-tunnel step are in
+[`deploy/README.md`](deploy/README.md).
+
+## 🛠 Development
+
+To build from source instead of pulling:
 
 ```bash
 cd web-ui
@@ -19,26 +55,8 @@ cp .env.example .env      # set the port, paths, and optionally Spotify
 docker compose up -d --build
 ```
 
-Open `http://<host>:8765`. Full setup — including the Spotify app registration
-and its redirect-URI constraint — is in [`web-ui/README.md`](web-ui/README.md).
-
-That builds from source, which is what you want for development.
-
-**To run it on a server or NAS, don't build — pull.** The image is published
-publicly and needs no login:
-
-```
-ghcr.io/roncanfil/spotify-playlists-to-mp3:latest
-```
-
-- **CasaOS / ZimaOS / Portainer / Dockge** — paste
-  [`deploy/casaos/docker-compose.yml`](deploy/casaos/docker-compose.yml) into the
-  UI. No `.env` needed; everything is literal, with four `EDIT` markers.
-- **A shell** — [`deploy/docker-compose.yml`](deploy/docker-compose.yml) plus a
-  `.env`.
-- **Proxmox** — a Docker LXC or VM, then either of the above.
-
-Full details in [`deploy/README.md`](deploy/README.md).
+See [`web-ui/README.md`](web-ui/README.md) for the app internals and the
+Spotify redirect-URI constraint.
 
 ## ✨ What it does
 

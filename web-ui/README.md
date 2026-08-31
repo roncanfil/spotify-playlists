@@ -14,6 +14,10 @@ installed.
 
 ## 🚀 Run it
 
+This folder builds the image from source, which is what you want for
+development. **To just run the app on a server or NAS, don't build it here** —
+pull the published image instead: see [`../deploy/README.md`](../deploy/README.md).
+
 ```bash
 cp .env.example .env      # edit port, paths, password
 docker compose up -d --build

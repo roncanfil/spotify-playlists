@@ -1,0 +1,56 @@
+# Playlist Downloader — standard docker-compose deployment.
+#
+#   cd web-ui
+#   cp .env.example .env      # edit paths/port/password to taste
+#   docker compose up -d --build
+#
+# Then open http://<host>:${PORT:-8765}
+#
+# Paths in .env are relative to this file unless you give absolute ones.
+name: playlist-downloader
+
+services:
+  downloader:
+    # Everything the image needs lives in this folder, so the context is local
+    # and tiny -- no risk of sending the music library to the Docker daemon.
+    build: .
+    image: playlist-downloader:latest
+    container_name: playlist-downloader
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8765}:8765"
+    environment:
+      MUSIC_DIR: /music
+      PLAYLIST_DIR: /playlists
+      YTDLP_UPGRADE_DIR: /data/ytdlp
+      # Refresh yt-dlp on every container start — this is what fixes most
+      # future YouTube breakage. Set to 0 to pin whatever the image shipped.
+      AUTO_UPDATE_YTDLP: "${AUTO_UPDATE_YTDLP:-1}"
+      BGUTIL_POT_BASE_URL: http://bgutil-provider:4416
+      # Leave empty for no login; set a value to require a password.
+      APP_PASSWORD: "${APP_PASSWORD:-}"
+      STATE_DIR: /data
+      # Optional Spotify integration; blank disables the Playlists tab.
+      SPOTIFY_CLIENT_ID: "${SPOTIFY_CLIENT_ID:-}"
+      SPOTIFY_REDIRECT_URI: "${SPOTIFY_REDIRECT_URI:-http://127.0.0.1:8765/callback}"
+    volumes:
+      # Finished music, one subfolder per CSV.
+      - "${MUSIC_PATH:-./data/music}:/music"
+      # Uploaded and saved CSV playlists.
+      - "${PLAYLIST_PATH:-./data/playlists}:/playlists"
+      # Persisted yt-dlp upgrades.
+      - "${STATE_PATH:-./data/state}:/data"
+    depends_on:
+      - bgutil-provider
+
+  # Clears YouTube's "confirm you're not a bot" checks, which a server IP trips
+  # more often than a laptop. Not needed for SABR-locked videos — those are
+  # handled by the android-client fallback in download.py.
+  # To drop it: delete this service, the depends_on above, and
+  # BGUTIL_POT_BASE_URL.
+  bgutil-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: bgutil-provider
+    restart: unless-stopped
+    expose:
+      - "4416"

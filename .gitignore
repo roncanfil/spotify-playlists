@@ -1,0 +1,21 @@
+# Runtime state: downloaded music, uploaded/exported CSVs, persisted yt-dlp.
+web-ui/data/
+
+# Secrets. .env holds the Spotify client id; the token file holds a live
+# refresh token for the connected account. Never commit either.
+.env
+*.env
+!*.env.example
+**/spotify_token.json
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# macOS
+.DS_Store
+
+# Local pre-refactor backups; the originals are in git history.
+*.pre-webui

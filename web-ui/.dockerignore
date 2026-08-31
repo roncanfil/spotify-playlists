@@ -1,0 +1,8 @@
+# The build context is just this folder now, so there is nothing large to guard
+# against -- only local runtime clutter to keep out of the image.
+data/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+spotify_token.json

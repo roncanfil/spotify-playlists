@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Playlist Downloader</title>
+<style>
+  :root {
+    --bg:#f6f6f4; --panel:#fff; --ink:#1a1a19; --muted:#6b6b66;
+    --line:#e2e2dd; --accent:#2f6f4f; --accent-ink:#fff;
+    --ok:#2f6f4f; --warn:#8a5a00; --fail:#a3302a; --skip:#6b6b66;
+    --spotify:#1db954; --radius:10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#16171a; --panel:#1e2024; --ink:#e9e9e6; --muted:#9a9a94;
+      --line:#2e3136; --accent:#4f9d76; --accent-ink:#10231a;
+      --ok:#6fbf95; --warn:#d9a340; --fail:#e0736c; --skip:#8a8a84;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:22px 18px 64px; }
+  header { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  h1 { font-size:21px; margin:0; letter-spacing:-.01em; }
+  .spacer { flex:1; }
+  .ver { color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; }
+  .panel { background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--radius); padding:18px; margin-bottom:16px; }
+  /* tabs */
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:18px; }
+  .tabs button { border:none; background:none; padding:9px 14px; font-size:14px;
+    font-weight:600; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; }
+  .tabs button.on { color:var(--ink); border-bottom-color:var(--accent); }
+  .tabs .badge { display:inline-block; min-width:18px; padding:0 5px; margin-left:6px;
+    border-radius:99px; background:var(--accent); color:var(--accent-ink);
+    font-size:11px; line-height:17px; text-align:center; }
+  .view { display:none; } .view.on { display:block; }
+  /* controls */
+  label.field { display:block; font-weight:600; font-size:13px; margin-bottom:7px; }
+  select, input[type=text] { width:100%; padding:9px 10px; border:1px solid var(--line);
+    border-radius:8px; background:var(--bg); color:var(--ink); font-size:14px; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; }
+  .row > div { flex:1; min-width:190px; }
+  .radios { display:flex; gap:8px; }
+  .radios label { flex:1; text-align:center; padding:9px; border:1px solid var(--line);
+    border-radius:8px; cursor:pointer; font-size:14px; user-select:none; }
+  .radios input { display:none; }
+  .radios label.on { border-color:var(--accent); background:var(--accent);
+    color:var(--accent-ink); font-weight:600; }
+  button.btn { padding:10px 18px; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel); color:var(--ink); font-size:14px; font-weight:600; cursor:pointer; }
+  button.btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  button.btn.sp { background:var(--spotify); color:#08130c; border-color:var(--spotify); }
+  button.btn:disabled { opacity:.45; cursor:not-allowed; }
+  button.link { border:none; background:none; color:var(--muted); font-weight:500;
+    padding:4px 6px; text-decoration:underline; cursor:pointer; font-size:13px; }
+  button.mini { padding:5px 11px; font-size:12.5px; border-radius:7px; border:1px solid var(--line);
+    background:var(--panel); color:var(--ink); cursor:pointer; font-weight:600; }
+  .drop { border:1.5px dashed var(--line); border-radius:8px; padding:20px;
+    text-align:center; color:var(--muted); cursor:pointer; transition:.15s; }
+  .drop.hot { border-color:var(--accent); color:var(--ink); }
+  .note { font-size:13px; color:var(--muted); border-left:2px solid var(--line);
+    padding:8px 0 8px 11px; margin-top:12px; display:none; }
+  .note.show { display:block; } .note.warn { border-color:var(--warn); }
+  .note.ok { border-color:var(--ok); } .note b { color:var(--ink); }
+  .msg { font-size:13.5px; padding:9px 11px; border-radius:8px; margin-bottom:12px; display:none; }
+  .msg.show { display:block; }
+  .msg.err { background:color-mix(in srgb,var(--fail) 14%,transparent); color:var(--fail); }
+  .msg.good { background:color-mix(in srgb,var(--ok) 14%,transparent); color:var(--ok); }
+  /* playlist grid */
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
+  .card { display:flex; gap:11px; padding:11px; border:1px solid var(--line);
+    border-radius:9px; background:var(--bg); align-items:center; }
+  .card img, .card .ph { width:56px; height:56px; border-radius:6px; object-fit:cover; flex:none;
+    background:var(--line); display:flex; align-items:center; justify-content:center;
+    font-size:20px; color:var(--muted); }
+  .card .meta { min-width:0; flex:1; }
+  .card .nm { font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; }
+  .card .sub { color:var(--muted); font-size:12.5px; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; }
+  .tag { font-size:10.5px; padding:1px 6px; border-radius:99px; border:1px solid var(--line);
+    color:var(--muted); margin-left:5px; }
+  /* progress */
+  .bar { height:8px; background:var(--line); border-radius:99px; overflow:hidden; margin:6px 0 10px; }
+  .bar > i { display:block; height:100%; background:var(--accent); width:0; transition:width .3s; }
+  .stats { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--muted);
+    font-variant-numeric:tabular-nums; }
+  .stats b { color:var(--ink); }
+  .log { margin-top:6px; max-height:38vh; overflow-y:auto; border-top:1px solid var(--line); }
+  .ev { display:flex; gap:9px; padding:7px 2px; border-bottom:1px solid var(--line);
+    font-size:13.5px; align-items:flex-start; }
+  .ev .ic { width:15px; flex:none; text-align:center; }
+  .ev .body { min-width:0; flex:1; }
+  .ev .body .d { color:var(--muted); font-size:12.5px; word-break:break-word; }
+  .ev.ok .ic{color:var(--ok)} .ev.fail .ic{color:var(--fail)}
+  .ev.warn .ic{color:var(--warn)} .ev.skip .ic,.ev.info .ic{color:var(--skip)}
+  .ev.skip .body{color:var(--muted)}
+  .qrow { display:flex; gap:10px; align-items:center; padding:9px 2px;
+    border-bottom:1px solid var(--line); font-size:13.5px; }
+  .qrow .nm { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .empty { color:var(--muted); font-size:13.5px; padding:16px 2px; }
+  .pill { font-size:11.5px; padding:2px 7px; border-radius:99px; border:1px solid var(--line);
+    color:var(--muted); }
+  code { background:var(--bg); border:1px solid var(--line); border-radius:5px;
+    padding:1px 5px; font-size:12.5px; word-break:break-all; }
+  h3 { font-size:14px; margin:18px 0 8px; }
+  h3:first-child { margin-top:0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Playlist Downloader</h1>
+    <span class="pill" id="pill">idle</span>
+  </header>
+
+  <div class="msg" id="msg"></div>
+
+  <div class="tabs">
+    <button data-tab="spotify" class="on">Spotify</button>
+    <button data-tab="csv">CSV file</button>
+    <button data-tab="queue">Queue<span class="badge" id="qbadge" hidden>0</span></button>
+    <button data-tab="settings" style="margin-left:auto">Settings</button>
+  </div>
+
+  <!-- ============ SPOTIFY ============ -->
+  <div class="view on" id="view-spotify">
+    <div class="panel" id="sp-setup" hidden>
+      <h3>Connect Spotify</h3>
+      <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px">
+        This needs a Spotify app of your own — free, takes a minute.
+      </p>
+      <ol style="font-size:13.5px;color:var(--muted);padding-left:20px;margin:0 0 12px">
+        <li>Open <b>developer.spotify.com/dashboard</b> and click <b>Create app</b>.</li>
+        <li>Add this exact <b>Redirect URI</b>:<br><code id="sp-redirect">…</code></li>
+        <li>Tick <b>Web API</b>, save, then copy the <b>Client ID</b>.</li>
+        <li>Put it in <code>.env</code> as <code>SPOTIFY_CLIENT_ID=…</code> and restart.</li>
+      </ol>
+      <p style="font-size:13px;color:var(--muted);margin:0">
+        Spotify refuses <code>localhost</code> and requires HTTPS for anything that
+        isn't a loopback address, so the redirect must be <code>127.0.0.1</code> and
+        you must connect from a browser <b>on the server itself</b>. Once connected,
+        the token is stored server-side and everyone else can just use it.
+      </p>
+    </div>
+
+    <div class="panel" id="sp-connect" hidden>
+      <h3>Connect Spotify</h3>
+      <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">
+        Read-only access to your playlists. Connect once from a browser on the
+        server; after that anyone can download without logging in.
+      </p>
+      <button class="btn sp" onclick="location.href='/api/spotify/login'">Connect to Spotify</button>
+    </div>
+
+    <div class="panel" id="sp-list" hidden>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <b id="sp-user" style="font-size:14px"></b>
+        <span class="spacer"></span>
+        <button class="link" id="sp-reload">Reload</button>
+        <button class="link" id="sp-disconnect">Disconnect</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <input type="text" id="sp-filter" placeholder="Filter playlists…" style="flex:1">
+        <span class="ver out-hint"></span>
+      </div>
+      <div class="grid" id="sp-grid"></div>
+      <div class="empty" id="sp-empty" hidden>No playlists found.</div>
+    </div>
+  </div>
+
+  <!-- ============ CSV ============ -->
+  <div class="view" id="view-csv">
+    <div class="panel">
+      <h3>Get a CSV from Exportify</h3>
+      <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px">
+        Use this when you would rather not connect Spotify here. Exportify is a
+        separate site that turns a Spotify playlist into a CSV file.
+      </p>
+      <ol style="font-size:13.5px;color:var(--muted);padding-left:20px;margin:0 0 16px">
+        <li>Open <a href="https://exportify.app/" target="_blank"
+            rel="noopener noreferrer"><b>exportify.app</b></a> and click
+            <b>Get Started</b>.</li>
+        <li>Log in with Spotify and allow read-only access to your playlists.</li>
+        <li>Find the playlist you want and click its <b>export</b> button — a
+            <code>.csv</code> file downloads.</li>
+        <li>Drop that file below.</li>
+      </ol>
+      <div class="drop" id="drop">
+        <span id="drop-text">Drop the CSV here, or click to choose</span>
+        <input type="file" id="file" accept=".csv" hidden>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">
+        The playlist name becomes the folder name, and tracks you already have
+        are skipped. Exportify's CSV has no genre column, so genre tags stay
+        empty — the Spotify tab fills those in.
+      </p>
+      <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn primary" id="btn-start">Add to queue</button>
+        <span class="ver out-hint"></span>
+        <span class="spacer"></span>
+        <span class="ver" id="outdir"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SETTINGS ============ -->
+  <div class="view" id="view-settings">
+    <div class="panel">
+      <h3>Output file</h3>
+      <label class="field">Format</label>
+      <div class="radios" id="formats">
+        <label data-fmt="mp3" class="on"><input type="radio" name="fmt" value="mp3" checked> MP3</label>
+        <label data-fmt="m4a"><input type="radio" name="fmt" value="m4a"> M4A</label>
+      </div>
+      <div class="note show" id="fmt-note"></div>
+
+      <label class="field" style="margin-top:18px">MP3 bitrate</label>
+      <div class="radios" id="bitrates">
+        <label data-br="128"><input type="radio" name="br" value="128"> 128k</label>
+        <label data-br="192" class="on"><input type="radio" name="br" value="192" checked> 192k</label>
+        <label data-br="320"><input type="radio" name="br" value="320"> 320k</label>
+      </div>
+      <div class="note show" id="br-note"></div>
+    </div>
+
+    <div class="panel">
+      <h3>yt-dlp</h3>
+      <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px">
+        YouTube changes often and yt-dlp is what keeps up. When downloads start
+        failing, update here — or just restart the container, which does the same
+        on boot.
+      </p>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span class="ver">Running version <b id="ytdlp">…</b></span>
+        <span class="spacer"></span>
+        <button class="btn" id="btn-update">Check for update</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ QUEUE ============ -->
+  <div class="view" id="view-queue">
+    <div class="panel">
+      <h3>Now downloading</h3>
+      <div id="q-current"><div class="empty">Nothing running.</div></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;align-items:center">
+        <h3 style="margin:0">Waiting</h3><span class="spacer"></span>
+        <button class="link" id="btn-clear">Clear waiting</button>
+      </div>
+      <div id="q-pending"><div class="empty">Queue is empty.</div></div>
+    </div>
+    <div class="panel">
+      <h3>Recent</h3>
+      <div id="q-recent"><div class="empty">Nothing yet.</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const ICON = { ok:'✓', fail:'✕', skip:'⏭', warn:'!', info:'·', error:'✕' };
+const LEVEL = { 128:'warn', 192:'ok', 320:'' };
+let NOTES = {}, FMT_NOTES = {}, spLoaded = false, spPlaylists = [],
+    lastEvents = -1, curTab = 'spotify';
+
+/* Output settings persist per browser. Wrapped because private windows and
+   blocked site-data make localStorage throw rather than return null. */
+const SETTINGS = { format: 'mp3', bitrate: '192' };
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem('pd-output');
+    if (raw) Object.assign(SETTINGS, JSON.parse(raw));
+  } catch (e) {}
+}
+function saveSettings() {
+  try { localStorage.setItem('pd-output', JSON.stringify(SETTINGS)); } catch (e) {}
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+function flash(text, good) {
+  const m = $('msg');
+  m.textContent = text;
+  m.className = 'msg show ' + (good ? 'good' : 'err');
+  if (good) setTimeout(() => m.className = 'msg', 6000);
+}
+async function api(path, fields) {
+  const opts = { method: 'POST' };
+  if (fields) {
+    opts.body = fields instanceof FormData
+      ? fields
+      : new URLSearchParams(fields);
+  }
+  const r = await fetch(path, opts);
+  let j = {};
+  try { j = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tabs button').forEach(b =>
+  b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+function showTab(name) {
+  curTab = name;
+  document.querySelectorAll('.tabs button').forEach(b =>
+    b.classList.toggle('on', b.dataset.tab === name));
+  ['spotify','csv','queue','settings'].forEach(v =>
+    $('view-' + v).classList.toggle('on', v === name));
+  if (name === 'spotify' && !spLoaded) loadSpotify();
+}
+
+/* ---------- output settings ---------- */
+function chosenBitrate() { return SETTINGS.bitrate; }
+function chosenFormat() { return SETTINGS.format; }
+
+function renderOutput() {
+  const { format, bitrate } = SETTINGS;
+  const isM4a = format === 'm4a';
+
+  document.querySelectorAll('#formats label').forEach(l =>
+    l.classList.toggle('on', l.dataset.fmt === format));
+  document.querySelectorAll('#formats input').forEach(i =>
+    i.checked = i.value === format);
+
+  const fn = $('fmt-note');
+  fn.innerHTML = FMT_NOTES[format]
+    ? `<b>${format.toUpperCase()}</b> — ${esc(FMT_NOTES[format])}` : '';
+  fn.className = 'note' + (fn.innerHTML ? ' show ' : ' ') + (isM4a ? 'ok' : '');
+
+  // Bitrate only means something when we are re-encoding.
+  document.querySelectorAll('#bitrates label').forEach(l => {
+    l.classList.toggle('on', !isM4a && l.dataset.br === bitrate);
+    l.style.opacity = isM4a ? '.4' : '';
+    l.style.pointerEvents = isM4a ? 'none' : '';
+  });
+  document.querySelectorAll('#bitrates input').forEach(i =>
+    i.checked = i.value === bitrate);
+
+  const bn = $('br-note');
+  if (isM4a) {
+    bn.innerHTML = 'Not used for M4A — the source stream is copied as-is.';
+    bn.className = 'note show';
+  } else {
+    bn.innerHTML = NOTES[bitrate]
+      ? `<b>${bitrate} kbps</b> — ${esc(NOTES[bitrate])}` : '';
+    bn.className = 'note' + (bn.innerHTML ? ' show ' : ' ') + (LEVEL[bitrate] || '');
+  }
+
+  const hint = isM4a ? 'Output: M4A (copy)' : `Output: MP3 @ ${bitrate}k`;
+  document.querySelectorAll('.out-hint').forEach(e => e.textContent = hint);
+}
+
+document.querySelectorAll('#formats input').forEach(r =>
+  r.addEventListener('change', () => {
+    SETTINGS.format = r.value; saveSettings(); renderOutput();
+  }));
+document.querySelectorAll('#bitrates input').forEach(r =>
+  r.addEventListener('change', () => {
+    SETTINGS.bitrate = r.value; saveSettings(); renderOutput();
+  }));
+
+/* ---------- spotify ---------- */
+async function loadSpotify() {
+  try {
+    const r = await fetch('/api/spotify/playlists');
+    const j = await r.json();
+    if (!r.ok) { spLoaded = false; return; }
+    spLoaded = true;
+    spPlaylists = j.playlists || [];
+    $('sp-user').textContent = (j.me && j.me.name) ? j.me.name + '’s playlists' : 'Your playlists';
+    renderPlaylists();
+  } catch (e) { spLoaded = false; }
+}
+
+function renderPlaylists() {
+  const q = ($('sp-filter').value || '').toLowerCase();
+  const rows = spPlaylists.filter(p => !q || (p.name || '').toLowerCase().includes(q));
+  $('sp-empty').hidden = rows.length > 0;
+  $('sp-grid').innerHTML = rows.map(p => {
+    const art = p.image
+      ? `<img src="${esc(p.image)}" alt="">`
+      : `<div class="ph">♫</div>`;
+    const tags = (p.collaborative ? '<span class="tag">shared</span>' : '')
+               + (p.public ? '<span class="tag">public</span>' : '');
+    return `<div class="card">
+      ${art}
+      <div class="meta">
+        <div class="nm">${esc(p.name)}${tags}</div>
+        <div class="sub">${p.tracks} track${p.tracks === 1 ? '' : 's'}${
+          p.owner ? ' · ' + esc(p.owner) : ''}</div>
+      </div>
+      <button class="mini" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Download</button>
+    </div>`;
+  }).join('');
+  $('sp-grid').querySelectorAll('button[data-id]').forEach(b =>
+    b.addEventListener('click', () => queuePlaylist(b, b.dataset.id, b.dataset.name)));
+}
+
+async function queuePlaylist(btn, id, name) {
+  btn.disabled = true;
+  const was = btn.textContent;
+  btn.textContent = 'Exporting…';
+  try {
+    const j = await api('/api/spotify/download',
+      { playlist_id: id, name, bitrate: chosenBitrate(), format: chosenFormat() });
+    flash(`Queued “${name}” — ${j.tracks} tracks (position ${j.position}).`, true);
+    showTab('queue');
+  } catch (e) { flash(e.message, false); }
+  btn.disabled = false;
+  btn.textContent = was;
+  poll();
+}
+
+$('sp-filter').addEventListener('input', renderPlaylists);
+$('sp-reload').addEventListener('click', () => { spLoaded = false; loadSpotify(); });
+$('sp-disconnect').addEventListener('click', async () => {
+  try {
+    await api('/api/spotify/disconnect');
+    spLoaded = false; spPlaylists = [];
+    flash('Disconnected from Spotify.', true);
+    poll();
+  } catch (e) { flash(e.message, false); }
+});
+
+/* ---------- csv ---------- */
+const drop = $('drop'), file = $('file');
+drop.addEventListener('click', () => file.click());
+file.addEventListener('change', () => {
+  $('drop-text').textContent = file.files[0] ? file.files[0].name
+    : 'Drop a CSV here, or click to choose';
+});
+['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => {
+  ev.preventDefault(); drop.classList.add('hot');
+}));
+['dragleave','drop'].forEach(e => drop.addEventListener(e, () => drop.classList.remove('hot')));
+drop.addEventListener('drop', ev => {
+  ev.preventDefault();
+  if (ev.dataTransfer.files.length) {
+    file.files = ev.dataTransfer.files;
+    $('drop-text').textContent = ev.dataTransfer.files[0].name;
+  }
+});
+
+$('btn-start').addEventListener('click', async () => {
+  const fd = new FormData();
+  fd.append('bitrate', chosenBitrate());
+  fd.append('format', chosenFormat());
+  if (!file.files[0]) return flash('Choose a CSV file first.', false);
+  fd.append('csv', file.files[0]);
+  $('btn-start').disabled = true;
+  try {
+    const j = await api('/api/start', fd);
+    flash(`Queued “${j.job.name}” (position ${j.position}).`, true);
+    file.value = '';
+    $('drop-text').textContent = 'Drop the CSV here, or click to choose';
+    showTab('queue');
+  } catch (e) { flash(e.message, false); }
+  $('btn-start').disabled = false;
+  poll();
+});
+
+/* ---------- queue ---------- */
+async function cancelJob(id) {
+  try { await api('/api/cancel', { job_id: id }); poll(); }
+  catch (e) { flash(e.message, false); }
+}
+$('btn-clear').addEventListener('click', async () => {
+  try {
+    const j = await api('/api/cancel-all');
+    flash(`Dropped ${j.dropped} waiting job${j.dropped === 1 ? '' : 's'}.`, true);
+    poll();
+  } catch (e) { flash(e.message, false); }
+});
+
+function renderCurrent(j) {
+  if (!j) {
+    $('q-current').innerHTML = '<div class="empty">Nothing running.</div>';
+    lastEvents = -1;
+    return;
+  }
+  const pct = j.total ? (100 * j.done / j.total) : 0;
+  const log = (j.events || []).map(e => {
+    const kind = e.kind || 'info';
+    const d = e.detail ? `<div class="d">${esc(e.detail)}</div>` : '';
+    return `<div class="ev ${kind}"><span class="ic">${ICON[kind] || '·'}</span>`
+         + `<span class="body">${esc(e.text)}${d}</span></div>`;
+  }).join('');
+  $('q-current').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+      <b>${esc(j.name)}</b><span class="pill">${esc(j.format)}</span>
+      <span class="spacer"></span>
+      <button class="mini" id="btn-cancel-cur">Cancel</button>
+    </div>
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    <div class="stats">
+      <span><b>${j.done}</b>/<b>${j.total}</b> processed</span>
+      <span>✅ <b>${j.downloaded}</b></span>
+      <span>⏭️ <b>${j.skipped}</b></span>
+      <span>❌ <b>${j.failed}</b></span>
+      <span>${j.elapsed}s</span>
+    </div>
+    ${j.current ? `<div style="margin-top:9px">🎵 ${esc(j.current)}</div>` : ''}
+    <div class="log" id="cur-log">${log || '<div class="empty">Starting…</div>'}</div>`;
+  const b = $('btn-cancel-cur');
+  if (b) b.addEventListener('click', () => cancelJob(j.id));
+  const el = $('cur-log');
+  if (el && (j.events || []).length !== lastEvents) {
+    lastEvents = (j.events || []).length;
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+function renderList(target, jobs, opts) {
+  if (!jobs.length) {
+    target.innerHTML = `<div class="empty">${opts.empty}</div>`;
+    return;
+  }
+  target.innerHTML = jobs.map((j, i) => {
+    const right = opts.cancel
+      ? `<button class="mini" data-cancel="${esc(j.id)}">Cancel</button>`
+      : `<span class="ver">${j.downloaded}✅ ${j.skipped}⏭️ ${j.failed}❌</span>`;
+    const label = opts.cancel ? `#${i + 1}` : esc(j.state);
+    return `<div class="qrow"><span class="pill">${label}</span>
+      <span class="nm">${esc(j.name)}</span>
+      <span class="ver">${esc(j.format)}</span>${right}</div>`;
+  }).join('');
+  target.querySelectorAll('button[data-cancel]').forEach(b =>
+    b.addEventListener('click', () => cancelJob(b.dataset.cancel)));
+}
+
+/* ---------- update button ---------- */
+$('btn-update').addEventListener('click', async () => {
+  const b = $('btn-update');
+  b.disabled = true; b.textContent = 'Updating…';
+  try {
+    const j = await api('/api/update-ytdlp');
+    if (j.restart_required)
+      flash(`Installed yt-dlp ${j.installed} (running ${j.running}). Restart the container to use it.`
+        + (j.persisted ? '' : ' No writable /data volume, so this will be lost on rebuild.'), true);
+    else flash(`Already current: yt-dlp ${j.running}.`, true);
+  } catch (e) { flash(e.message, false); }
+  b.disabled = false; b.textContent = 'Update';
+});
+
+/* ---------- poll ---------- */
+async function poll() {
+  let d;
+  try { d = await (await fetch('/api/state')).json(); } catch (e) { return; }
+
+  $('ytdlp').textContent = d.ytdlp;
+  if (d.bitrate_notes && !Object.keys(NOTES).length) {
+    NOTES = d.bitrate_notes;
+    FMT_NOTES = d.format_notes || {};
+    renderOutput();
+  }
+  if (d.startup_warnings && d.startup_warnings.length && !d.current)
+    flash(d.startup_warnings.join(' | '), false);
+
+  // spotify panels
+  const sp = d.spotify || {};
+  $('sp-redirect').textContent = sp.redirect_uri || '';
+  $('sp-setup').hidden = sp.configured;
+  $('sp-connect').hidden = !sp.configured || sp.connected;
+  $('sp-list').hidden = !sp.connected;
+  if (sp.connected && !spLoaded) loadSpotify();
+
+  $('outdir').textContent = 'Saving to ' + d.music_dir;
+
+  // queue
+  renderCurrent(d.current);
+  renderList($('q-pending'), d.pending || [], { empty: 'Queue is empty.', cancel: true });
+  renderList($('q-recent'), d.recent || [], { empty: 'Nothing yet.', cancel: false });
+
+  const waiting = (d.pending || []).length;
+  const n = waiting + (d.current ? 1 : 0);
+  $('qbadge').hidden = n === 0;
+  $('qbadge').textContent = n;
+  $('pill').textContent = d.current
+    ? `downloading · ${d.current.done}/${d.current.total}`
+    : (waiting ? `${waiting} waiting` : 'idle');
+}
+
+loadSettings();
+renderOutput();
+showTab('spotify');
+poll();
+setInterval(poll, 1500);
+</script>
+</body>
+</html>

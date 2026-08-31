@@ -1,0 +1,120 @@
+# Playlist Downloader — CasaOS / ZimaOS / Portainer / Dockge single-file install.
+#
+# Paste this whole file into CasaOS: App Store -> Custom Install -> Import
+# (or Portainer: Stacks -> Add stack -> Web editor). Nothing else is needed:
+# no .env, no source checkout, no build step.
+#
+# There are exactly four things you may want to change, each marked EDIT below.
+# Everything else has a working default.
+#
+# Deliberately uses NO ${VARIABLE} syntax. The .env-driven version of this file
+# lives at ../docker-compose.yml and is for plain `docker compose` on a shell,
+# where a .env file actually exists. CasaOS has no .env to read.
+
+name: playlist-downloader
+
+services:
+  downloader:
+    image: ghcr.io/roncanfil/spotify-playlists-to-mp3:latest
+    container_name: playlist-downloader
+    restart: unless-stopped
+    ports:
+      # EDIT 1 (optional) — host port. Change the LEFT number only; the
+      # container always listens on 8765. If you change it, you must also
+      # change the port in SPOTIFY_REDIRECT_URI below to match.
+      - "8765:8765"
+    environment:
+      # EDIT 2 (optional) — set a password to require a login. Any username
+      # works; only the password is checked. Leave empty for no login.
+      # Set this if the NAS is reachable from outside your LAN.
+      APP_PASSWORD: ""
+
+      # EDIT 3 (optional) — Spotify. Blank hides the Playlists tab and the app
+      # works by CSV upload alone. To enable it, create a free app at
+      # https://developer.spotify.com/dashboard, tick "Web API", register the
+      # redirect URI below EXACTLY, and paste the Client ID here.
+      # No client secret is needed (Authorization Code + PKCE).
+      SPOTIFY_CLIENT_ID: ""
+
+      # Spotify rejects `localhost` and demands HTTPS for any non-loopback
+      # address, so a NAS hostname or LAN IP will NOT be accepted here. The
+      # one-time "Connect" click therefore has to come from a browser that
+      # reaches the app as 127.0.0.1 -- easiest over an SSH tunnel:
+      #   ssh -L 8765:127.0.0.1:8765 you@nas
+      # then open http://127.0.0.1:8765 on your own machine and click Connect.
+      # The token is then saved to /DATA/AppData/... and shared by all users.
+      # Keep the port here equal to the host port in EDIT 1.
+      SPOTIFY_REDIRECT_URI: "http://127.0.0.1:8765/callback"
+
+      # Reinstalls yt-dlp on every container start. yt-dlp is the piece YouTube
+      # keeps breaking, so leaving this at 1 means "restart the app" fixes most
+      # future breakage with no new image. Set to 0 to pin the bundled version.
+      AUTO_UPDATE_YTDLP: "1"
+
+      # Container-internal paths. These match the volume targets below -- there
+      # is no reason to change them.
+      MUSIC_DIR: /music
+      PLAYLIST_DIR: /playlists
+      STATE_DIR: /data
+      YTDLP_UPGRADE_DIR: /data/ytdlp
+      BGUTIL_POT_BASE_URL: http://bgutil-provider:4416
+    volumes:
+      # EDIT 4 — host paths, on the LEFT of each colon. The defaults follow the
+      # CasaOS convention: media under /DATA/Media, app state under
+      # /DATA/AppData. Point the music one at wherever your library lives.
+      - /DATA/Media/Music:/music
+      - /DATA/AppData/playlist-downloader/playlists:/playlists
+      - /DATA/AppData/playlist-downloader/state:/data
+    depends_on:
+      - bgutil-provider
+
+  # Solves YouTube's "confirm you're not a bot" challenge, which a NAS or VPS
+  # IP trips far more often than a home laptop does. Upstream publishes this to
+  # Docker Hub only -- there is no GHCR copy -- so it is pulled from there.
+  # Supports amd64 and arm64.
+  # To drop it: delete this service, the depends_on above, and
+  # BGUTIL_POT_BASE_URL.
+  bgutil-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: bgutil-provider
+    restart: unless-stopped
+    expose:
+      - "4416"
+
+# CasaOS / ZimaOS store metadata. Ignored by plain docker compose, Portainer and
+# Dockge, so this file stays valid everywhere.
+x-casaos:
+  id: com.github.roncanfil.playlist-downloader
+  main: downloader
+  index: /
+  port_map: "8765"
+  scheme: http
+  architectures:
+    - amd64
+    - arm64
+  title:
+    en_US: Playlist Downloader
+  tagline:
+    en_US: Turn Spotify playlists into tagged MP3 or FLAC files.
+  description:
+    en_US: >-
+      A self-hosted web UI that takes a Spotify playlist -- connected directly
+      or uploaded as a CSV -- finds each track, and saves it as a properly
+      tagged MP3 or FLAC, one folder per playlist. yt-dlp refreshes itself on
+      every restart, so the usual YouTube breakage is fixed by restarting the
+      app rather than waiting for a new image.
+  tips:
+    before_install:
+      en_US: >-
+        Set APP_PASSWORD if this NAS is reachable from outside your LAN.
+        Spotify's login only works through an SSH tunnel to 127.0.0.1 -- see the
+        comments in the compose file. You can skip Spotify entirely and upload
+        playlist CSVs instead.
+  category: Media
+  author: roncanfil
+  developer: roncanfil
+  website: https://github.com/roncanfil/spotify-playlists-to-MP3
+  repo: https://github.com/roncanfil/spotify-playlists-to-MP3
+  support: https://github.com/roncanfil/spotify-playlists-to-MP3/issues
+  icon: https://raw.githubusercontent.com/roncanfil/spotify-playlists-to-MP3/main/deploy/casaos/icon.png
+  version: "1.1.0"

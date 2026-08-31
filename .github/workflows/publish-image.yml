@@ -1,0 +1,75 @@
+# Builds and publishes the container image to GHCR.
+#
+# Runs on a version tag, so publishing is `git tag v1.1.0 && git push --tags`.
+# No personal access token anywhere: GITHUB_TOKEN is minted per run and scoped
+# by the `permissions` block below.
+#
+# Builds amd64 and arm64, because self-hosters land on both -- an amd64-only
+# image fails on a Raspberry Pi or an ARM NAS with a confusing "exec format
+# error" rather than a clear message.
+
+name: Publish image
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to publish (e.g. 1.1.0)"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # arm64 is emulated on an amd64 runner, so it needs binfmt handlers.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Lowercases the repo name for us -- GHCR rejects uppercase, and this
+      # repo has "MP3" in its name.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+          labels: |
+            org.opencontainers.image.title=Playlist Downloader
+            org.opencontainers.image.description=Web UI for downloading Spotify playlists as tagged MP3 or FLAC files.
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: web-ui
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Emulated arm64 pip installs are slow; cache across runs.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "### Published" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "Platforms: linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY

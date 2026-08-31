@@ -1,4 +1,4 @@
-import pandas as pd
+import csv
 import yt_dlp
 import os
 import re
@@ -86,12 +86,26 @@ def _player_client_opts(player_client):
     return {"extractor_args": args} if args else {}
 
 
-def pick_column(df, *candidates):
-    """Return the first column name that exists in df, or None."""
+def pick_column(columns, *candidates):
+    """Return the first of `candidates` present in `columns`, or None."""
     for name in candidates:
-        if name in df.columns:
+        if name in columns:
             return name
     return None
+
+
+def read_playlist_csv(csv_file):
+    """
+    Read a playlist CSV into (header_names, list_of_row_dicts).
+
+    utf-8-sig because Spotify/Exportify exports are BOM-prefixed, and a BOM
+    would otherwise glue itself to the first header name and hide it from
+    pick_column. Every value stays a string -- unlike pandas, which used to
+    coerce a track called "1984" to an int and "NaN" to a float.
+    """
+    with open(csv_file, newline="", encoding="utf-8-sig") as fh:
+        reader = csv.DictReader(fh)
+        return (reader.fieldnames or []), list(reader)
 
 
 def cell_str(row, col):
@@ -102,7 +116,7 @@ def cell_str(row, col):
         val = row[col]
     except (KeyError, TypeError):
         return ""
-    if pd.isna(val):
+    if val is None:
         return ""
     return str(val).strip()
 
@@ -649,34 +663,34 @@ def download_song(
     }
 
 
-def resolve_columns(df):
+def resolve_columns(columns):
     """
     Map a CSV's actual headers onto the fields we tag with.
     Returns (columns_dict, warnings_list); raises ValueError if unusable.
     """
     cols = {
-        "track": pick_column(df, "Track Name", "Name", "Title"),
-        "artist": pick_column(df, "Artist Name(s)", "Artist", "Artists"),
-        "album": pick_column(df, "Album Name", "Album"),
+        "track": pick_column(columns, "Track Name", "Name", "Title"),
+        "artist": pick_column(columns, "Artist Name(s)", "Artist", "Artists"),
+        "album": pick_column(columns, "Album Name", "Album"),
         "track_num": pick_column(
-            df, "Track Number", "Track #", "Track No.", "Track No",
+            columns, "Track Number", "Track #", "Track No.", "Track No",
             "Position", "#", "Index",
         ),
-        "total_tracks": pick_column(df, "Total Tracks", "Album Track Count"),
+        "total_tracks": pick_column(columns, "Total Tracks", "Album Track Count"),
         "album_artist": pick_column(
-            df, "Album Artist Name(s)", "Album Artist(s)", "Album Artist"
+            columns, "Album Artist Name(s)", "Album Artist(s)", "Album Artist"
         ),
         # Spotify/Exportify exports name this "Album Release Date"; without it
         # every track was silently tagged with no year.
         "release_date": pick_column(
-            df, "Release Date", "Album Release Date", "Year", "Date"
+            columns, "Release Date", "Album Release Date", "Year", "Date"
         ),
-        "genre": pick_column(df, "Genres", "Genre"),
+        "genre": pick_column(columns, "Genres", "Genre"),
     }
     if not cols["track"] or not cols["artist"]:
         raise ValueError(
             "CSV must include track and artist columns (e.g. 'Track Name' and "
-            f"'Artist Name(s)'). Found columns: {list(df.columns)}"
+            f"'Artist Name(s)'). Found columns: {columns}"
         )
     warnings = []
     if not cols["album"]:
@@ -704,14 +718,14 @@ def process_playlist(
     """
     bitrate = normalize_bitrate(bitrate)
     audio_format = normalize_audio_format(audio_format)
-    df = pd.read_csv(csv_file)
-    cols, warnings = resolve_columns(df)
+    columns, rows = read_playlist_csv(csv_file)
+    cols, warnings = resolve_columns(columns)
 
     output_dir = os.path.join(output_root, get_output_dir(csv_file))
     os.makedirs(output_dir, exist_ok=True)
     ext = audio_format
 
-    total_songs = len(df)
+    total_songs = len(rows)
     playlist_len = max(total_songs, 1)
 
     yield {
@@ -727,7 +741,7 @@ def process_playlist(
 
     downloaded = skipped = failed = 0
 
-    for playlist_index, (_, row) in enumerate(df.iterrows(), start=1):
+    for playlist_index, row in enumerate(rows, start=1):
         if should_cancel is not None and should_cancel():
             yield {"type": "cancelled", "at": playlist_index}
             break

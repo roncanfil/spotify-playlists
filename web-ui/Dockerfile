@@ -1,9 +1,10 @@
 FROM python:3.13-slim
 
-# ffmpeg does the audio extraction and the MP3 encoding.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg \
- && rm -rf /var/lib/apt/lists/*
+# ffmpeg does the audio extraction and the encoding. Debian's `ffmpeg` package
+# drags in ~400MB of dependencies we never touch (X11, SDL, GTK, the whole
+# desktop stack), so take static binaries from an image that builds nothing but
+# those. Same codecs, a third of the weight, and no shared-library surface.
+COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /ffprobe /usr/local/bin/
 
 WORKDIR /app
 

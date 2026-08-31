@@ -8,6 +8,7 @@ audio from YouTube.
 | Folder | What it is |
 |---|---|
 | [`web-ui/`](web-ui) | **The app.** A Dockerised web UI: connect Spotify, browse playlists, queue downloads. Start here. |
+| [`deploy/`](deploy) | **Server deployment.** Build the image on your machine, push it to a registry, pull it on the server — no source checkout needed there. |
 | [`cli/`](cli) | **Historical.** The original command-line script and a record of why the project moved to a web UI. Not maintained. |
 
 ## 🚀 Quick start
@@ -20,6 +21,10 @@ docker compose up -d --build
 
 Open `http://<host>:8765`. Full setup — including the Spotify app registration
 and its redirect-URI constraint — is in [`web-ui/README.md`](web-ui/README.md).
+
+That builds from source on the spot, which is what you want locally. To run it
+on a server, see [`deploy/README.md`](deploy/README.md) instead: the image is
+built once on a dev machine and the server just pulls it.
 
 ## ✨ What it does
 

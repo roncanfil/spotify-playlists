@@ -1,20 +1,24 @@
-# Playlist Downloader — standard docker-compose deployment.
+# Playlist Downloader — server deployment from a prebuilt image.
 #
-#   cd web-ui
-#   cp .env.example .env      # edit paths/port/password to taste
-#   docker compose up -d --build
+# Nothing here is built on the server, so this folder is all the server needs:
+# this file plus a .env. No source checkout, no Dockerfile, no compiler.
 #
-# Then open http://<host>:${PORT:-8765}
+#   mkdir -p ~/playlist-downloader && cd ~/playlist-downloader
+#   # copy this file and .env.example across, then:
+#   cp .env.example .env && nano .env
+#   docker compose up -d
 #
-# Paths in .env are relative to this file unless you give absolute ones.
+# To update later:  docker compose pull && docker compose up -d
+#
+# The image is built and pushed from a dev machine; see deploy/README.md.
+
 name: playlist-downloader
 
 services:
   downloader:
-    # Everything the image needs lives in this folder, so the context is local
-    # and tiny -- no risk of sending the music library to the Docker daemon.
-    build: .
-    image: playlist-downloader:latest
+    # Pinning a real version rather than floating on :latest means `pull` is a
+    # deliberate act and you can roll back by editing one line.
+    image: "${IMAGE:-ghcr.io/roncanfil/spotify-playlists-to-mp3}:${IMAGE_TAG:-latest}"
     container_name: playlist-downloader
     restart: unless-stopped
     ports:
@@ -24,7 +28,8 @@ services:
       PLAYLIST_DIR: /playlists
       YTDLP_UPGRADE_DIR: /data/ytdlp
       # Refresh yt-dlp on every container start — this is what fixes most
-      # future YouTube breakage. Set to 0 to pin whatever the image shipped.
+      # future YouTube breakage without touching the image. Set to 0 to pin
+      # whatever the image shipped with.
       AUTO_UPDATE_YTDLP: "${AUTO_UPDATE_YTDLP:-1}"
       BGUTIL_POT_BASE_URL: http://bgutil-provider:4416
       # Leave empty for no login; set a value to require a password.
@@ -36,20 +41,17 @@ services:
       # hence ${PORT}, not the fixed 8765 the container listens on inside.
       SPOTIFY_REDIRECT_URI: "${SPOTIFY_REDIRECT_URI:-http://127.0.0.1:${PORT:-8765}/callback}"
     volumes:
-      # Finished music, one subfolder per CSV.
-      - "${MUSIC_PATH:-./data/music}:/music"
+      # Finished music, one subfolder per CSV. Point this at the big disk.
+      - "${MUSIC_PATH:?set MUSIC_PATH in .env}:/music"
       # Uploaded and saved CSV playlists.
-      - "${PLAYLIST_PATH:-./data/playlists}:/playlists"
-      # Persisted yt-dlp upgrades.
-      - "${STATE_PATH:-./data/state}:/data"
+      - "${PLAYLIST_PATH:?set PLAYLIST_PATH in .env}:/playlists"
+      # Persisted yt-dlp upgrades and the Spotify token.
+      - "${STATE_PATH:?set STATE_PATH in .env}:/data"
     depends_on:
       - bgutil-provider
 
   # Clears YouTube's "confirm you're not a bot" checks, which a server IP trips
-  # more often than a laptop. Not needed for SABR-locked videos — those are
-  # handled by the android-client fallback in download.py.
-  # To drop it: delete this service, the depends_on above, and
-  # BGUTIL_POT_BASE_URL.
+  # far more often than a home connection does. Public image, pulled directly.
   bgutil-provider:
     image: brainicism/bgutil-ytdlp-pot-provider:latest
     container_name: bgutil-provider

@@ -48,16 +48,18 @@ Portainer or Dockge, which cannot supply a `.env`.
 | Setting | Default | Purpose |
 |---|---|---|
 | host port in `ports:` | `8765` | Port the UI listens on. Left side only |
-| `/music` mount | `./music` | Where finished music is written |
-| `/playlists` mount | `./playlists` | Where CSVs live; uploads land here |
-| `/data` mount | `./state` | yt-dlp upgrades and the Spotify token |
+| `/music` mount | `./music` | Finished audio, one folder per playlist |
+| `/data` mount | `./data` | Playlist CSVs, the Spotify token, yt-dlp updates |
 | `APP_PASSWORD` | *(empty)* | Blank = no login. Any username; password is checked |
 | `AUTO_UPDATE_YTDLP` | `1` | Re-install latest yt-dlp on each start |
 | `SPOTIFY_CLIENT_ID` | *(empty)* | Blank hides the Spotify tab |
 | `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8765/callback` | Must match the Spotify dashboard exactly, port included |
 
 `MUSIC_DIR`, `PLAYLIST_DIR`, `STATE_DIR` and `YTDLP_UPGRADE_DIR` are the paths
-*inside* the container and match the mount targets; leave them alone.
+*inside* the container and match the mount targets; leave them alone. Note that
+`STATE_DIR` cannot move off `/data` without also overriding `PYTHONPATH`, which
+the image sets to `/data/ytdlp` so yt-dlp upgrades take precedence over the
+bundled copy.
 
 ## 🎧 Spotify setup
 

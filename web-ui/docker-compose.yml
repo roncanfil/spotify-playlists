@@ -33,18 +33,18 @@ services:
       # breakage without a new image. 0 pins the bundled version.
       AUTO_UPDATE_YTDLP: "1"
 
-      # Paths inside the container; they match the mounts below. Leave alone.
+      # Paths inside the container; they match the mounts below.
       MUSIC_DIR: /music
-      PLAYLIST_DIR: /playlists
+      PLAYLIST_DIR: /data/playlists
       STATE_DIR: /data
       YTDLP_UPGRADE_DIR: /data/ytdlp
       BGUTIL_POT_BASE_URL: http://bgutil-provider:4416
     volumes:
       # EDIT host paths — left of each colon. Created if missing.
-      # CasaOS: /DATA/Media/Music and /DATA/AppData/playlist-downloader/...
+      # Your library. Downloads land here, one folder per playlist.
       - ./music:/music
-      - ./playlists:/playlists
-      - ./state:/data
+      # App data: playlist CSVs, the Spotify token, yt-dlp updates.
+      - ./data:/data
     depends_on:
       - bgutil-provider
 

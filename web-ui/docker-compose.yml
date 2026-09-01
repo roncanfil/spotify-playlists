@@ -18,8 +18,9 @@ services:
       # Blank = no Playlists tab; CSV upload still works. PKCE, so no secret.
       SPOTIFY_CLIENT_ID: ""
 
-      # Must match the host port above and be registered in the Spotify
-      # dashboard verbatim. HTTPS required unless it is 127.0.0.1.
+      # Register verbatim at https://developer.spotify.com/dashboard, port
+      # included. Must be https:// for a real domain — Spotify accepts http://
+      # only for 127.0.0.1, and rejects `localhost` outright.
       SPOTIFY_REDIRECT_URI: "http://127.0.0.1:8765/callback"
 
       # Refresh yt-dlp each start; a restart then fixes most YouTube breakage.

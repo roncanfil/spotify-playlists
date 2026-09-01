@@ -55,6 +55,11 @@ Portainer or Dockge, which cannot supply a `.env`.
 | `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8765/callback` | Must match the Spotify dashboard exactly, port included |
 
 `MUSIC_DIR` is the only path to set, and the music mount is the only volume.
+It is not in the compose file at all — the image defaults it to `/music`, as it
+does `YTDLP_UPGRADE_DIR`, so the compose file only carries the settings you
+might actually change plus `BGUTIL_POT_BASE_URL`, which depends on the compose
+network and so cannot be defaulted in the image.
+
 There is
 no `PLAYLIST_DIR`: a playlist *is* a folder under `MUSIC_DIR`, holding its
 tracks, the CSV it came from, and a generated `.m3u`. `/data` is hardcoded

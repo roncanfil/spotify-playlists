@@ -33,9 +33,8 @@ services:
       # breakage without a new image. 0 pins the bundled version.
       AUTO_UPDATE_YTDLP: "1"
 
-      # Paths inside the container; they match the mounts below.
-      MUSIC_DIR: /music
-      YTDLP_UPGRADE_DIR: /data/ytdlp
+      # Where to reach the bot-check helper below. Not a path, and the only
+      # setting here the image cannot default on its own.
       BGUTIL_POT_BASE_URL: http://bgutil-provider:4416
     volumes:
       # EDIT — the only path to set. Each playlist becomes a folder in here

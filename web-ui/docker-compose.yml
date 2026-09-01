@@ -40,14 +40,24 @@ services:
       # No client secret is needed (Authorization Code + PKCE).
       SPOTIFY_CLIENT_ID: ""
 
-      # Spotify rejects `localhost` and demands HTTPS for any non-loopback
-      # address, so a NAS hostname or LAN IP will NOT be accepted here. The
-      # one-time "Connect" click has to come from a browser that reaches the
-      # app as 127.0.0.1 -- easiest over an SSH tunnel:
-      #   ssh -L 8765:127.0.0.1:8765 you@server
-      # then open http://127.0.0.1:8765 on your own machine and click Connect.
-      # The token is saved to the state volume and shared by all users.
-      # Keep this port equal to the host port in EDIT 1.
+      # Spotify's rule: the redirect must be HTTPS, with one exception -- a
+      # loopback address may use plain HTTP. `localhost` is rejected outright.
+      # So there are two valid setups:
+      #
+      #  1. No domain (the default below). Only 127.0.0.1 works, which means
+      #     the one-time "Connect" click must come from a browser that reaches
+      #     the app as 127.0.0.1. Over SSH:
+      #       ssh -L 8765:127.0.0.1:8765 you@server
+      #     then open http://127.0.0.1:8765 locally and click Connect.
+      #     Keep the port here equal to the host port in EDIT 1.
+      #
+      #  2. A real domain behind HTTPS (recommended once you have one). Put
+      #     the app behind a reverse proxy with a TLS certificate and set:
+      #       SPOTIFY_REDIRECT_URI: "https://music.example.com/callback"
+      #     No tunnel, and anyone can connect from any browser. A plain
+      #     http:// domain will NOT work -- Spotify requires TLS here.
+      #
+      # Either way, register the exact value in the Spotify dashboard.
       SPOTIFY_REDIRECT_URI: "http://127.0.0.1:8765/callback"
 
       # Reinstalls yt-dlp on every container start. yt-dlp is the piece YouTube

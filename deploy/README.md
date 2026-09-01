@@ -84,24 +84,58 @@ breaking, and `AUTO_UPDATE_YTDLP=1` reinstalls the latest into the mounted state
 volume on every boot — so **restarting the app** is the first thing to try, and
 usually the only thing.
 
-## Spotify on a headless box
+## Spotify
 
-Spotify rejects `localhost` and requires HTTPS for any non-loopback address, so
-the only plain-HTTP redirect it accepts is `http://127.0.0.1:<PORT>/callback`.
-A NAS hostname or LAN IP will not be accepted.
+Optional. Leave `SPOTIFY_CLIENT_ID` blank and the Playlists tab is hidden; the
+app still works by uploading CSVs exported from [Exportify](https://exportify.net).
 
-So the one-time "Connect to Spotify" click has to come from a browser that
-reaches the app as `127.0.0.1`. Use an SSH tunnel:
+Spotify's redirect-URI rule is the only fiddly part: **it must be HTTPS**, with
+a single exception — a loopback address may use plain HTTP. `localhost` is
+rejected outright. That gives two valid setups.
+
+### Option 1 — no domain (SSH tunnel)
+
+Only `http://127.0.0.1:<PORT>/callback` works, so the one-time "Connect" click
+has to come from a browser that reaches the app as `127.0.0.1`:
 
 ```bash
 ssh -L 8765:127.0.0.1:8765 you@server
 # then open http://127.0.0.1:8765 on your own machine and click Connect
 ```
 
-Afterwards the token is saved in the state volume and every user shares it.
-Register the redirect URI in the [Spotify dashboard](https://developer.spotify.com/dashboard)
-**exactly**, port included. If you change the host port, update it in both the
-compose file and the dashboard.
+A NAS hostname or LAN IP will not be accepted. This is a one-time step — the
+token is saved in the state volume and every user shares it afterwards.
+
+### Option 2 — a real domain over HTTPS (recommended)
+
+Once the app is behind a reverse proxy with a TLS certificate, use the real URL
+and the tunnel disappears entirely — anyone can connect from any browser:
+
+```yaml
+SPOTIFY_REDIRECT_URI: "https://music.example.com/callback"
+```
+
+A plain `http://` domain will **not** work; Spotify requires TLS for anything
+that is not a loopback address. Caddy is the least work — two lines of Caddyfile
+gets you an automatic Let's Encrypt certificate:
+
+```
+music.example.com {
+    reverse_proxy 127.0.0.1:8765
+}
+```
+
+The app needs no changes for this. It generates no absolute URLs, so there is
+no `X-Forwarded-Proto` / ProxyFix problem to solve — it only reads the `code`
+and `state` query parameters that Spotify appends.
+
+### Either way
+
+Register the exact value in the [Spotify dashboard](https://developer.spotify.com/dashboard)
+— scheme, host, port and path all have to match character for character. If you
+change the host port or the domain, update it in both the compose file and the
+dashboard. No client secret is ever needed: the app uses Authorization Code +
+PKCE.
 
 Or skip Spotify entirely: leave `SPOTIFY_CLIENT_ID` blank and upload CSVs
 exported from [Exportify](https://exportify.net).

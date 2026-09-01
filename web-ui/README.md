@@ -66,17 +66,23 @@ Optional — without it the CSV tab still works. Create a free app at
 **Web API**, register the redirect URI above **exactly**, and put the Client ID
 in the compose file. No client secret: the app uses Authorization Code + PKCE.
 
-**The one-time connect must happen from a browser on the server.** Spotify
-refuses `localhost` and requires HTTPS for anything that is not a loopback
-address, so `http://127.0.0.1:PORT/callback` is the only plain-HTTP redirect it
-accepts — and a phone redirecting there would hit its own loopback, not this
-server. If you normally reach the box over SSH, forward the port for the setup
-step:
+Spotify requires the redirect URI to be **HTTPS**, except that a loopback
+address may use plain HTTP. `localhost` is refused outright. So either:
 
-```bash
-ssh -L 8765:127.0.0.1:8765 you@server
-# then open http://127.0.0.1:8765 locally and click Connect
-```
+- **No domain** — only `http://127.0.0.1:PORT/callback` works, and the one-time
+  connect must come from a browser that reaches the app as `127.0.0.1`. A phone
+  redirecting there would hit its own loopback, not this server. Forward the
+  port over SSH for the setup step:
+
+  ```bash
+  ssh -L 8765:127.0.0.1:8765 you@server
+  # then open http://127.0.0.1:8765 locally and click Connect
+  ```
+
+- **A real domain over HTTPS** — set
+  `SPOTIFY_REDIRECT_URI: "https://music.example.com/callback"` and no tunnel is
+  needed at all. See [`../deploy/README.md`](../deploy/README.md) for the
+  reverse-proxy setup.
 
 After that the refresh token lives in `STATE_PATH/spotify_token.json` and every
 visitor uses it, from any device. Only your account ever authenticates, so the

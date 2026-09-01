@@ -39,14 +39,13 @@ The four things you may want to change are marked `EDIT 1`–`EDIT 4` in the fil
 
    | Host (default) | Container | Holds |
    |---|---|---|
-   | `./music` | `/music` | one folder per playlist: tracks, `.csv`, `.m3u` |
-   | named volume `appdata` | `/data` | Spotify token, yt-dlp self-updates |
+   | `./music` | `/music` | everything that persists |
 
-   **Only the music path needs a decision.** Each playlist becomes one folder
-   under it containing its tracks, the `.csv` it came from and a generated
-   `.m3u`. `/data` is a named volume, so Docker chooses where it lives and
-   keeps it across updates — it holds the Spotify token and 25 MB of yt-dlp
-   packages, neither of which you need to browse. The defaults are relative, so they land next to the compose file
+   **One volume, one decision.** Each playlist becomes a folder under it with
+   its tracks, the `.csv` it came from and a generated `.m3u`. The Spotify
+   token goes in a hidden `.playlist-downloader/` folder there too, so
+   connecting Spotify survives updates without a second volume. yt-dlp's
+   self-updates are not persisted at all — they are reinstalled on every boot. The defaults are relative, so they land next to the compose file
    and the app is self-contained.
 
    Point the music mount at your actual library. Under CasaOS or ZimaOS use

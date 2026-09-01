@@ -48,21 +48,13 @@ Portainer or Dockge, which cannot supply a `.env`.
 | Setting | Default | Purpose |
 |---|---|---|
 | host port in `ports:` | `8765` | Port the UI listens on. Left side only |
-| `/music` mount | `./music` | One folder per playlist: tracks, its `.csv`, its `.m3u` |
-| `/data` volume | named `appdata` | The Spotify token and yt-dlp's self-updates |
+| `/music` mount | `./music` | Everything that persists — the only volume |
 | `APP_PASSWORD` | *(empty)* | Blank = no login. Any username; password is checked |
 | `AUTO_UPDATE_YTDLP` | `1` | Re-install latest yt-dlp on each start |
 | `SPOTIFY_CLIENT_ID` | *(empty)* | Blank hides the Spotify tab |
 | `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8765/callback` | Must match the Spotify dashboard exactly, port included |
 
-`MUSIC_DIR` is the only path you need to set. `/data` is a **named volume**
-rather than a bind mount: it holds the Spotify token and the yt-dlp packages
-that get reinstalled on each boot — 25 MB of plumbing with nothing in it worth
-browsing — so Docker picks where it lives and keeps it across updates. Drop the
-volume and the app still runs; you would just re-do the one-time Spotify connect
-after each update, since that token is the only thing in there that cannot be
-regenerated automatically.
-
+`MUSIC_DIR` is the only path to set, and the music mount is the only volume.
 There is
 no `PLAYLIST_DIR`: a playlist *is* a folder under `MUSIC_DIR`, holding its
 tracks, the CSV it came from, and a generated `.m3u`. `/data` is hardcoded
@@ -70,16 +62,27 @@ rather than configurable, because the image sets `PYTHONPATH=/data/ytdlp` so
 yt-dlp upgrades outrank the bundled copy — a movable state directory would
 silently disable them.
 
-### What a playlist folder looks like
+### What the music folder looks like
 
 ```
 music/
+├── .playlist-downloader/
+│   └── spotify_token.json                so you connect Spotify only once
 └── Lenox Ave/
     ├── Lenox Ave.csv                     the playlist it came from
     ├── Lenox Ave.m3u                     generated after each run
     ├── Tycho - 01 - Sunrise.mp3
     └── Bonobo - 02 - Café Solo.mp3
 ```
+
+The Spotify refresh token is the only thing that has to outlive a container, so
+it sits in a hidden folder here rather than in a second volume. Dot-prefixed to
+keep it out of file browsers and media scanners, and `list_playlists()` skips
+dot-prefixed names so it never appears as a playlist.
+
+yt-dlp's self-updates deliberately are *not* persisted. The entrypoint
+reinstalls them on every boot, so they stay in the container's own layer at
+`/data/ytdlp` (where the image points `PYTHONPATH`) and need no volume.
 
 The `.m3u` is extended M3U — `#EXTINF` duration and `Artist - Title` per entry,
 with relative filenames, so the folder can be moved or copied and the playlist

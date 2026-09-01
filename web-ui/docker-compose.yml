@@ -38,13 +38,9 @@ services:
       YTDLP_UPGRADE_DIR: /data/ytdlp
       BGUTIL_POT_BASE_URL: http://bgutil-provider:4416
     volumes:
-      # EDIT — the only path you need to set. Your library; each playlist
-      # becomes a folder holding its tracks, its .csv and its .m3u.
+      # EDIT — the only path to set. Each playlist becomes a folder in here
+      # holding its tracks, its .csv and its .m3u.
       - ./music:/music
-      # The Spotify token and yt-dlp's self-updates. A named volume because
-      # there is nothing in here to browse and no path worth choosing; Docker
-      # keeps it across updates.
-      - appdata:/data
     depends_on:
       - bgutil-provider
 
@@ -56,6 +52,3 @@ services:
     restart: unless-stopped
     expose:
       - "4416"
-
-volumes:
-  appdata:

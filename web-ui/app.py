@@ -31,10 +31,15 @@ MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music")
 # Every playlist is one folder under MUSIC_DIR holding its own CSV, its tracks
 # and its .m3u, so there is no separate playlist directory to configure.
 #
-# /data is fixed rather than configurable: the image sets
-# PYTHONPATH=/data/ytdlp so yt-dlp upgrades outrank the bundled copy, and a
-# STATE_DIR that pointed elsewhere would silently disable those upgrades.
-STATE_DIR = "/data"
+# The one thing that has to outlive a container is the Spotify refresh token,
+# and it lives in a hidden folder inside MUSIC_DIR so that the music mount is
+# the only volume anyone has to set up. Dot-prefixed to stay out of the way of
+# file browsers and media scanners.
+#
+# yt-dlp's self-updates deliberately do NOT live here: the entrypoint
+# reinstalls them on every boot, so they belong in the container's own layer
+# (/data/ytdlp, where the image points PYTHONPATH) and need no volume.
+STATE_DIR = os.path.join(MUSIC_DIR, ".playlist-downloader")
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
 PORT = os.environ.get("PORT", "8765")
@@ -357,14 +362,19 @@ def ytdlp_version():
 
 
 def list_playlists():
-    """Playlist folders under MUSIC_DIR that contain their own <name>.csv."""
+    """Playlist folders under MUSIC_DIR that contain their own <name>.csv.
+
+    Skips dot-prefixed names so our own .playlist-downloader state folder, and
+    anything else hidden, never shows up as a playlist.
+    """
     try:
         entries = os.listdir(MUSIC_DIR)
     except OSError:
         return []
     return sorted(
         name for name in entries
-        if os.path.isfile(os.path.join(MUSIC_DIR, name, f"{name}.csv"))
+        if not name.startswith(".")
+        and os.path.isfile(os.path.join(MUSIC_DIR, name, f"{name}.csv"))
     )
 
 

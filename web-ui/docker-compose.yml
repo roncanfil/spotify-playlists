@@ -1,19 +1,8 @@
-# Playlist Downloader — deployment file.
+# Playlist Downloader.  `docker compose up -d`, or paste into Portainer,
+# Dockge, CasaOS, Unraid, Synology. Pulls a public image — nothing to build,
+# no .env needed. Setup guide: deploy/README.md
 #
-#   docker compose up -d
-#
-# Or paste it into whatever manages your containers: Portainer or Dockge
-# (Stacks -> Add stack -> Web editor), CasaOS or ZimaOS (Custom Install ->
-# Import), Unraid, Synology Container Manager.
-#
-# It pulls a prebuilt public image, so there is no build step and no login.
-# Plain compose with no ${VARIABLE} substitution and no .env file, because the
-# paste-into-a-textarea installers above cannot supply one.
-#
-# Four things you may want to change, marked EDIT below. Everything else works
-# as-is.
-#
-# Building from source instead (contributors): see web-ui/README.md.
+# Change the four EDIT lines if you want to; everything else works as-is.
 
 name: playlist-downloader
 
@@ -23,72 +12,44 @@ services:
     container_name: playlist-downloader
     restart: unless-stopped
     ports:
-      # EDIT 1 (optional) — host port. Change the LEFT number only; the
-      # container always listens on 8765 internally. If you change it, change
-      # the port in SPOTIFY_REDIRECT_URI below to match.
+      # EDIT host port — left number only; the container is always on 8765.
       - "8765:8765"
     environment:
-      # EDIT 2 (optional) — set a password to require a login. Any username
-      # works; only the password is checked. Leave empty for no login. Set it
-      # if this box is reachable from outside your LAN.
+      # EDIT password — blank means no login. Set one if reachable off-LAN.
       APP_PASSWORD: ""
 
-      # EDIT 3 (optional) — Spotify. Blank hides the Playlists tab and the app
-      # works by CSV upload alone. To enable it, create a free app at
-      # https://developer.spotify.com/dashboard, tick "Web API", register the
-      # redirect URI below EXACTLY, and paste the Client ID here.
-      # No client secret is needed (Authorization Code + PKCE).
+      # EDIT Spotify — blank hides the Playlists tab; CSV upload still works.
+      # Client ID from developer.spotify.com/dashboard ("Web API" ticked).
+      # No client secret needed: PKCE.
       SPOTIFY_CLIENT_ID: ""
 
-      # Spotify's rule: the redirect must be HTTPS, with one exception -- a
-      # loopback address may use plain HTTP. `localhost` is rejected outright.
-      # So there are two valid setups:
-      #
-      #  1. No domain (the default below). Only 127.0.0.1 works, which means
-      #     the one-time "Connect" click must come from a browser that reaches
-      #     the app as 127.0.0.1. Over SSH:
-      #       ssh -L 8765:127.0.0.1:8765 you@server
-      #     then open http://127.0.0.1:8765 locally and click Connect.
-      #     Keep the port here equal to the host port in EDIT 1.
-      #
-      #  2. A real domain behind HTTPS (recommended once you have one). Put
-      #     the app behind a reverse proxy with a TLS certificate and set:
-      #       SPOTIFY_REDIRECT_URI: "https://music.example.com/callback"
-      #     No tunnel, and anyone can connect from any browser. A plain
-      #     http:// domain will NOT work -- Spotify requires TLS here.
-      #
-      # Either way, register the exact value in the Spotify dashboard.
+      # Must be HTTPS unless it is a loopback address (`localhost` is refused).
+      # So either keep 127.0.0.1 below and connect through an SSH tunnel, or
+      # once you have a domain with TLS use https://music.example.com/callback.
+      # Register the exact value in the Spotify dashboard. See deploy/README.md.
       SPOTIFY_REDIRECT_URI: "http://127.0.0.1:8765/callback"
 
-      # Reinstalls yt-dlp on every container start. yt-dlp is the piece YouTube
-      # keeps breaking, so leaving this at 1 means "restart the app" fixes most
-      # future breakage with no new image. Set to 0 to pin the bundled version.
+      # Reinstall yt-dlp on each start, so restarting fixes most YouTube
+      # breakage without a new image. 0 pins the bundled version.
       AUTO_UPDATE_YTDLP: "1"
 
-      # Container-internal paths, matching the volume targets below. No reason
-      # to change these.
+      # Paths inside the container; they match the mounts below. Leave alone.
       MUSIC_DIR: /music
       PLAYLIST_DIR: /playlists
       STATE_DIR: /data
       YTDLP_UPGRADE_DIR: /data/ytdlp
       BGUTIL_POT_BASE_URL: http://bgutil-provider:4416
     volumes:
-      # EDIT 4 — host paths, on the LEFT of each colon. Point the music one at
-      # wherever your library lives. Docker creates these if missing.
-      #   CasaOS / ZimaOS users: /DATA/Media/Music and
-      #   /DATA/AppData/playlist-downloader/... match the usual layout.
+      # EDIT host paths — left of each colon. Created if missing.
+      # CasaOS: /DATA/Media/Music and /DATA/AppData/playlist-downloader/...
       - ./music:/music
       - ./playlists:/playlists
       - ./state:/data
     depends_on:
       - bgutil-provider
 
-  # Solves YouTube's "confirm you're not a bot" challenge, which a NAS or VPS
-  # IP trips far more often than a home laptop does. Upstream publishes this to
-  # Docker Hub only -- there is no GHCR copy -- so it comes from there.
-  # Supports amd64 and arm64.
-  # To drop it: delete this service, the depends_on above, and
-  # BGUTIL_POT_BASE_URL. Downloads still work, you just see more bot checks.
+  # Answers YouTube's bot checks, which server IPs trip more than home ones.
+  # Optional: delete this service, the depends_on, and BGUTIL_POT_BASE_URL.
   bgutil-provider:
     image: brainicism/bgutil-ytdlp-pot-provider:latest
     container_name: bgutil-provider

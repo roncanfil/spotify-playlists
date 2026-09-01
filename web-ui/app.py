@@ -10,6 +10,7 @@ playlist's CSV, its tracks and its .m3u, plus a job on one serial queue.
 import functools
 import os
 import re
+import secrets
 import subprocess
 import sys
 import threading
@@ -17,7 +18,9 @@ import time
 import uuid
 from collections import deque
 
-from flask import Flask, Response, jsonify, redirect, render_template, request
+from flask import (
+    Flask, Response, jsonify, redirect, render_template, request, session, url_for
+)
 
 # download.py in this folder is the engine: search, download, transcode, tag.
 # It also still runs standalone as a deprecated CLI; see ../cli/README.md.
@@ -68,6 +71,42 @@ for _label, _path in (
         STARTUP_WARNINGS.append(f"{_label} {_path!r} is unavailable: {_e}")
         print(f"[warn] {STARTUP_WARNINGS[-1]}", file=sys.stderr)
 
+def _secret_key():
+    """
+    Stable signing key for the login cookie, kept beside the Spotify token.
+
+    Generated once and reused, so restarting the container does not sign
+    everyone out. If STATE_DIR is unwritable we fall back to a per-process key
+    rather than refusing to start -- logins then last until the next restart.
+    """
+    path = os.path.join(STATE_DIR, "secret_key")
+    try:
+        with open(path, "rb") as fh:
+            key = fh.read().strip()
+        if key:
+            return key
+    except OSError:
+        pass
+    key = secrets.token_bytes(32)
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(path, "wb") as fh:
+            fh.write(key)
+        os.chmod(path, 0o600)
+    except OSError as e:
+        print(f"[warn] could not persist the session key ({e}); "
+              "logins will not survive a restart", file=sys.stderr)
+    return key
+
+
+app.secret_key = _secret_key()
+# Lax rather than Strict: Spotify redirects the browser back to /callback from
+# accounts.spotify.com, and Strict would drop the cookie on that hop.
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
+
 spotify = sp.SpotifyClient(
     SPOTIFY_CLIENT_ID,
     SPOTIFY_REDIRECT_URI,
@@ -75,21 +114,38 @@ spotify = sp.SpotifyClient(
 )
 
 
+def _password_ok(candidate):
+    """Constant-time compare, so a wrong guess reveals nothing by timing."""
+    return secrets.compare_digest(str(candidate or ""), APP_PASSWORD)
+
+
+def _authenticated():
+    if not APP_PASSWORD:
+        return True
+    if session.get("authed"):
+        return True
+    # HTTP Basic is still honoured so curl and scripts keep working.
+    auth = request.authorization
+    return bool(auth and _password_ok(auth.password))
+
+
 def require_auth(view):
-    """Optional HTTP Basic gate; open when APP_PASSWORD is unset."""
+    """
+    Optional gate; wide open when APP_PASSWORD is unset.
+
+    A browser gets the login page rather than the OS Basic-auth dialog, which
+    cannot be styled and gives no way to show an error. Anything under /api/
+    gets a 401 JSON instead, because a redirect to an HTML page is useless to
+    fetch() -- the front end turns that 401 into a page load of /login.
+    """
 
     @functools.wraps(view)
     def wrapped(*a, **kw):
-        if not APP_PASSWORD:
+        if _authenticated():
             return view(*a, **kw)
-        auth = request.authorization
-        if auth and auth.password == APP_PASSWORD:
-            return view(*a, **kw)
-        return Response(
-            "Authentication required",
-            401,
-            {"WWW-Authenticate": 'Basic realm="Playlist Downloader"'},
-        )
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Not signed in.", "login": True}), 401
+        return redirect(url_for("login", next=request.full_path.rstrip("?")))
 
     return wrapped
 
@@ -381,6 +437,38 @@ def list_playlists():
 # ---------------------------------------------------------------- pages
 
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not APP_PASSWORD:
+        return redirect("/")
+
+    # Only ever redirect within this site; an absolute URL here would be an
+    # open redirect.
+    target = request.values.get("next") or "/"
+    if not target.startswith("/") or target.startswith("//"):
+        target = "/"
+
+    if request.method == "POST":
+        if _password_ok(request.form.get("password")):
+            session["authed"] = True
+            session.permanent = True
+            return redirect(target)
+        return (
+            render_template("login.html", error="Wrong password.", next_url=target),
+            401,
+        )
+
+    if session.get("authed"):
+        return redirect(target)
+    return render_template("login.html", error=None, next_url=target)
+
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
 @app.get("/")
 @require_auth
 def index():
@@ -408,6 +496,9 @@ def api_state():
             "bitrates": list(core.SUPPORTED_BITRATES),
             "default_bitrate": core.DEFAULT_BITRATE,
             "bitrate_notes": {str(k): v for k, v in core.BITRATE_NOTES.items()},
+            # Drives the Sign out link; there is nothing to sign out of when
+            # no password is configured.
+            "auth_enabled": bool(APP_PASSWORD),
             "formats": list(core.SUPPORTED_FORMATS),
             "default_format": core.DEFAULT_FORMAT,
             "format_notes": dict(core.FORMAT_NOTES),

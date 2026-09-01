@@ -49,7 +49,7 @@ Portainer or Dockge, which cannot supply a `.env`.
 |---|---|---|
 | host port in `ports:` | `8765` | Port the UI listens on. Left side only |
 | `/music` mount | `./music` | Everything that persists — the only volume |
-| `APP_PASSWORD` | *(empty)* | Blank = no login. Any username; password is checked |
+| `APP_PASSWORD` | *(empty)* | Blank = no login. Otherwise a password page guards the app |
 | `AUTO_UPDATE_YTDLP` | `1` | Re-install latest yt-dlp on each start |
 | `SPOTIFY_CLIENT_ID` | *(empty)* | Blank hides the Spotify tab |
 | `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8765/callback` | Must match the Spotify dashboard exactly, port included |

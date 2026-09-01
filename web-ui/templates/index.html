@@ -18,6 +18,9 @@
       --ok:#6fbf95; --warn:#d9a340; --fail:#e0736c; --skip:#8a8a84;
     }
   }
+  .linkish { background:none; border:0; padding:0; cursor:pointer;
+    color:var(--muted); font:inherit; font-size:13px; text-decoration:underline; }
+  .linkish:hover { color:var(--ink); }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
     font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
@@ -115,6 +118,10 @@
   <header>
     <h1>Playlist Downloader</h1>
     <span class="pill" id="pill">idle</span>
+    <form method="post" action="/logout" id="signout" hidden
+          style="margin-left:auto">
+      <button type="submit" class="linkish">Sign out</button>
+    </form>
   </header>
 
   <div class="msg" id="msg"></div>
@@ -301,6 +308,7 @@ async function api(path, fields) {
       : new URLSearchParams(fields);
   }
   const r = await fetch(path, opts);
+  if (r.status === 401) { location.href = '/login'; throw new Error('Signed out.'); }
   let j = {};
   try { j = await r.json(); } catch (e) {}
   if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
@@ -556,7 +564,12 @@ $('btn-update').addEventListener('click', async () => {
 /* ---------- poll ---------- */
 async function poll() {
   let d;
-  try { d = await (await fetch('/api/state')).json(); } catch (e) { return; }
+  try {
+    const r = await fetch('/api/state');
+    if (r.status === 401) { location.href = '/login'; return; }
+    d = await r.json();
+  } catch (e) { return; }
+  $('signout').hidden = !d.auth_enabled;
 
   $('ytdlp').textContent = d.ytdlp;
   if (d.bitrate_notes && !Object.keys(NOTES).length) {

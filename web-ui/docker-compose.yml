@@ -12,7 +12,7 @@ services:
       # Host port on the left; the container is always 8765.
       - "8765:8765"
     environment:
-      # Blank = no login.
+      # Blank = no login. Set one and the app shows a password page.
       APP_PASSWORD: ""
 
       # Blank = no Playlists tab; CSV upload still works. PKCE, so no secret.

@@ -14,38 +14,57 @@ installed.
 
 ## 🚀 Run it
 
-This folder builds the image from source, which is what you want for
-development. **To just run the app on a server or NAS, don't build it here** —
-pull the published image instead: see [`../deploy/README.md`](../deploy/README.md).
+To just run the app, use the published image —
+[`docker-compose.yml`](docker-compose.yml) already points at it, so there is
+nothing to build:
 
 ```bash
-cp .env.example .env      # edit port, paths, password
-docker compose up -d --build
+docker compose up -d
 ```
 
-Then open `http://<host>:8765`.
+See [`../deploy/README.md`](../deploy/README.md) for CasaOS, Proxmox and volume
+paths.
+
+### Building from source
+
+Contributors: build the image under the tag the compose file expects, and
+compose will use your local build instead of pulling.
+
+```bash
+docker build -t ghcr.io/roncanfil/spotify-playlists-to-mp3:latest .
+docker compose up -d
+```
+
+Repeat both after any change to `app.py`, `download.py`, `spotify.py` or
+`templates/`. Then open `http://<host>:8765`.
 
 ## ⚙️ Configuration
 
-All via `.env` (see [`.env.example`](.env.example)):
+There is no `.env`. Every setting is a literal value in the `environment:` and
+`volumes:` blocks of [`docker-compose.yml`](docker-compose.yml) — edit it in
+place. That is what lets the same file be pasted straight into CasaOS,
+Portainer or Dockge, which cannot supply a `.env`.
 
-| Variable | Default | Purpose |
+| Setting | Default | Purpose |
 |---|---|---|
-| `PORT` | `8765` | Port the UI listens on |
-| `MUSIC_PATH` | `./data/music` | Where finished music is written |
-| `PLAYLIST_PATH` | `./data/playlists` | Where CSVs live; uploads land here |
-| `STATE_PATH` | `./data/state` | Persisted yt-dlp upgrades |
+| host port in `ports:` | `8765` | Port the UI listens on. Left side only |
+| `/music` mount | `/DATA/Media/Music` | Where finished music is written |
+| `/playlists` mount | `/DATA/AppData/playlist-downloader/playlists` | Where CSVs live; uploads land here |
+| `/data` mount | `/DATA/AppData/playlist-downloader/state` | yt-dlp upgrades and the Spotify token |
 | `APP_PASSWORD` | *(empty)* | Blank = no login. Any username; password is checked |
 | `AUTO_UPDATE_YTDLP` | `1` | Re-install latest yt-dlp on each start |
 | `SPOTIFY_CLIENT_ID` | *(empty)* | Blank hides the Spotify tab |
-| `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8765/callback` | Must match the Spotify dashboard exactly |
+| `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8765/callback` | Must match the Spotify dashboard exactly, port included |
+
+`MUSIC_DIR`, `PLAYLIST_DIR`, `STATE_DIR` and `YTDLP_UPGRADE_DIR` are the paths
+*inside* the container and match the mount targets; leave them alone.
 
 ## 🎧 Spotify setup
 
 Optional — without it the CSV tab still works. Create a free app at
 [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard), tick
 **Web API**, register the redirect URI above **exactly**, and put the Client ID
-in `.env`. No client secret: the app uses Authorization Code + PKCE.
+in the compose file. No client secret: the app uses Authorization Code + PKCE.
 
 **The one-time connect must happen from a browser on the server.** Spotify
 refuses `localhost` and requires HTTPS for anything that is not a loopback
@@ -72,7 +91,7 @@ any CSV you already have.
 > other sources. Practical risk: your app key could be revoked. Worth knowing
 > before you rely on it.
 
-Output is one subfolder per CSV, so `lenox.csv` writes to `<MUSIC_PATH>/lenox/`.
+Output is one subfolder per CSV, so `lenox.csv` writes to `<music mount>/lenox/`.
 Tracks that already exist are skipped, making re-runs incremental.
 
 ## 🎚️ Bitrate
@@ -144,7 +163,8 @@ docker compose restart downloader
 ```
 
 That re-installs the latest yt-dlp. The **Update** button in the UI does the
-same without a rebuild. If it still fails, rebuild: `docker compose up -d --build`.
+same without a rebuild. If it still fails, pull a newer image:
+`docker compose pull && docker compose up -d`.
 
 ## 🖥️ Running without Docker
 

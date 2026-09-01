@@ -7,19 +7,18 @@ compiled on the server. It is public — pulling needs no login.
 ghcr.io/roncanfil/spotify-playlists-to-mp3:latest
 ```
 
-Pick whichever of these matches how you deploy.
+There is exactly one compose file for every deployment target:
 
-| Your setup | Use |
-|---|---|
-| CasaOS / ZimaOS / Portainer / Dockge — paste one YAML file | [`casaos/docker-compose.yml`](casaos/docker-compose.yml) |
-| A shell, with `docker compose` and a `.env` | [`docker-compose.yml`](docker-compose.yml) + [`.env.example`](.env.example) |
-| Proxmox | a Docker LXC or VM, then either of the above |
-| Building from source instead of pulling | [`../web-ui/docker-compose.yml`](../web-ui/docker-compose.yml) |
+**[`../web-ui/docker-compose.yml`](../web-ui/docker-compose.yml)**
+
+It uses no `${VARIABLE}` substitution and needs no `.env`, because the
+paste-a-file installers below cannot supply one. Every setting is a literal you
+edit in place.
 
 ## CasaOS / ZimaOS / Portainer / Dockge
 
 These import a single compose file and give you no `.env`, so
-`casaos/docker-compose.yml` is written with literal values and no `${VARIABLE}`
+`../web-ui/docker-compose.yml` is written with literal values and no `${VARIABLE}`
 substitution anywhere. Paste it as-is and it works.
 
 **CasaOS:** App Store → **Custom Install** → **Import** → paste the file → adjust
@@ -48,19 +47,18 @@ The file also carries an `x-casaos` block, so CasaOS shows a proper title, icon,
 category and web-UI port instead of a bare container. Plain `docker compose`,
 Portainer and Dockge ignore that block, so the same file works everywhere.
 
-## Plain docker compose
+## Any Linux box, Proxmox guest, or VPS
 
 ```bash
 mkdir -p ~/playlist-downloader && cd ~/playlist-downloader
-# copy deploy/docker-compose.yml and deploy/.env.example here
-cp .env.example .env
-nano .env          # the three paths are required; set APP_PASSWORD if exposed
+curl -fsSLO https://raw.githubusercontent.com/roncanfil/spotify-playlists-to-MP3/main/web-ui/docker-compose.yml
+nano docker-compose.yml    # set the volume paths, and a password if exposed
 docker compose up -d
 ```
 
-`MUSIC_PATH`, `PLAYLIST_PATH` and `STATE_PATH` are required rather than
-defaulted, deliberately — so a large music library never lands on the OS disk
-by accident.
+The volume defaults follow the CasaOS layout (`/DATA/...`). On a plain server or
+Proxmox guest, point them wherever your disks are — `/srv/playlist-downloader/`
+or similar. Docker creates the directories.
 
 ## Proxmox
 

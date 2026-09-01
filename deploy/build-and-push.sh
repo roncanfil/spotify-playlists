@@ -6,8 +6,10 @@
 #   PLATFORMS=linux/arm64 ./deploy/build-and-push.sh 1.0.0   # Pi, Graviton, ARM VPS
 #   PLATFORMS=linux/amd64,linux/arm64 ./deploy/build-and-push.sh 1.0.0   # both
 #
-# Every push also moves the `latest` tag, so deploy/.env can stay on `latest`
-# for convenience or pin the version tag for reproducibility.
+# Every push also moves the `latest` tag, which is what web-ui/docker-compose.yml
+# points at. Prefer the GitHub Actions workflow (.github/workflows/publish-image.yml):
+# it needs no personal access token and builds arm64 as well. This script is for
+# testing a build locally before tagging a release.
 set -euo pipefail
 
 IMAGE="${IMAGE:-ghcr.io/roncanfil/spotify-playlists-to-mp3}"

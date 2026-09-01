@@ -8,7 +8,7 @@ audio from YouTube.
 | Folder | What it is |
 |---|---|
 | [`web-ui/`](web-ui) | **The app.** A Dockerised web UI: connect Spotify, browse playlists, queue downloads. Start here. |
-| [`deploy/`](deploy) | **Server / NAS deployment.** A prebuilt public image on GHCR. One-file compose for CasaOS, ZimaOS, Portainer and Dockge; an `.env`-driven one for a plain shell. |
+| [`deploy/`](deploy) | **Deployment guide.** CasaOS, Proxmox, updating, and how the image is published. The compose file itself lives in `web-ui/`. |
 | [`cli/`](cli) | **Historical.** The original command-line script and a record of why the project moved to a web UI. Not maintained. |
 
 ## 🚀 Install
@@ -23,7 +23,7 @@ Supports `linux/amd64` and `linux/arm64`.
 
 ### CasaOS / ZimaOS / Portainer / Dockge
 
-Paste [`deploy/casaos/docker-compose.yml`](deploy/casaos/docker-compose.yml)
+Paste [`web-ui/docker-compose.yml`](web-ui/docker-compose.yml)
 into the UI's custom-install / stack editor. It needs no `.env` — every value is
 literal, with four `EDIT` markers for the port, password, Spotify client ID and
 volume paths.
@@ -32,7 +32,7 @@ volume paths.
 
 ```bash
 mkdir -p ~/playlist-downloader && cd ~/playlist-downloader
-curl -fsSLO https://raw.githubusercontent.com/roncanfil/spotify-playlists-to-MP3/main/deploy/casaos/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/roncanfil/spotify-playlists-to-MP3/main/web-ui/docker-compose.yml
 nano docker-compose.yml     # set the volume paths and a password
 docker compose up -d
 ```
@@ -51,12 +51,13 @@ To build from source instead of pulling:
 
 ```bash
 cd web-ui
-cp .env.example .env      # set the port, paths, and optionally Spotify
-docker compose up -d --build
+docker build -t ghcr.io/roncanfil/spotify-playlists-to-mp3:latest .
+docker compose up -d
 ```
 
-See [`web-ui/README.md`](web-ui/README.md) for the app internals and the
-Spotify redirect-URI constraint.
+Building under the tag the compose file expects means compose uses your local
+build instead of pulling. See [`web-ui/README.md`](web-ui/README.md) for the app
+internals and the Spotify redirect-URI constraint.
 
 ## ✨ What it does
 

@@ -6,7 +6,7 @@ this project started as, before it became a web service.
 The downloader now lives in [`../web-ui`](../web-ui):
 
 ```bash
-cd ../web-ui && cp .env.example .env && docker compose up -d --build
+cd ../web-ui && docker compose up -d
 ```
 
 ## 📂 What is in here

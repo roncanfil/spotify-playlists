@@ -49,13 +49,21 @@ Portainer or Dockge, which cannot supply a `.env`.
 |---|---|---|
 | host port in `ports:` | `8765` | Port the UI listens on. Left side only |
 | `/music` mount | `./music` | One folder per playlist: tracks, its `.csv`, its `.m3u` |
-| `/data` mount | `./data` | The Spotify token and yt-dlp updates |
+| `/data` volume | named `appdata` | The Spotify token and yt-dlp's self-updates |
 | `APP_PASSWORD` | *(empty)* | Blank = no login. Any username; password is checked |
 | `AUTO_UPDATE_YTDLP` | `1` | Re-install latest yt-dlp on each start |
 | `SPOTIFY_CLIENT_ID` | *(empty)* | Blank hides the Spotify tab |
 | `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8765/callback` | Must match the Spotify dashboard exactly, port included |
 
-`MUSIC_DIR` is the only path worth changing, and only via its mount. There is
+`MUSIC_DIR` is the only path you need to set. `/data` is a **named volume**
+rather than a bind mount: it holds the Spotify token and the yt-dlp packages
+that get reinstalled on each boot — 25 MB of plumbing with nothing in it worth
+browsing — so Docker picks where it lives and keeps it across updates. Drop the
+volume and the app still runs; you would just re-do the one-time Spotify connect
+after each update, since that token is the only thing in there that cannot be
+regenerated automatically.
+
+There is
 no `PLAYLIST_DIR`: a playlist *is* a folder under `MUSIC_DIR`, holding its
 tracks, the CSV it came from, and a generated `.m3u`. `/data` is hardcoded
 rather than configurable, because the image sets `PYTHONPATH=/data/ytdlp` so

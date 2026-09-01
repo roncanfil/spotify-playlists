@@ -39,12 +39,14 @@ The four things you may want to change are marked `EDIT 1`–`EDIT 4` in the fil
 
    | Host (default) | Container | Holds |
    |---|---|---|
-   | `./music` | `/music` | finished audio, one folder per playlist |
-   | `./data` | `/data` | Spotify token, yt-dlp updates |
+   | `./music` | `/music` | one folder per playlist: tracks, `.csv`, `.m3u` |
+   | named volume `appdata` | `/data` | Spotify token, yt-dlp self-updates |
 
-   Two mounts: the library you care about, and the small bit of state the app
-   needs to remember. Each playlist becomes one folder under the music mount
-   containing its tracks, the `.csv` it came from and a generated `.m3u`. The defaults are relative, so they land next to the compose file
+   **Only the music path needs a decision.** Each playlist becomes one folder
+   under it containing its tracks, the `.csv` it came from and a generated
+   `.m3u`. `/data` is a named volume, so Docker chooses where it lives and
+   keeps it across updates — it holds the Spotify token and 25 MB of yt-dlp
+   packages, neither of which you need to browse. The defaults are relative, so they land next to the compose file
    and the app is self-contained.
 
    Point the music mount at your actual library. Under CasaOS or ZimaOS use
@@ -61,10 +63,9 @@ nano docker-compose.yml    # set the volume paths, and a password if exposed
 docker compose up -d
 ```
 
-The volume defaults are relative to the compose file, so this creates `./music`
-and `./data` in that directory. Point the music mount at your actual library —
-`/srv/music`, `/mnt/storage/music`, wherever it is. Docker creates any missing
-directories.
+The music mount defaults to `./music`, relative to the compose file. Point it at
+your actual library — `/srv/music`, `/mnt/storage/music`, wherever it is. Docker
+creates the directory if it is missing. Nothing else needs a path.
 
 ## Proxmox
 

@@ -40,10 +40,11 @@ The four things you may want to change are marked `EDIT 1`–`EDIT 4` in the fil
    | Host (default) | Container | Holds |
    |---|---|---|
    | `./music` | `/music` | finished audio, one folder per playlist |
-   | `./data` | `/data` | playlist CSVs, Spotify token, yt-dlp updates |
+   | `./data` | `/data` | Spotify token, yt-dlp updates |
 
-   Two mounts: the library you care about, and everything the app needs to
-   remember. The defaults are relative, so they land next to the compose file
+   Two mounts: the library you care about, and the small bit of state the app
+   needs to remember. Each playlist becomes one folder under the music mount
+   containing its tracks, the `.csv` it came from and a generated `.m3u`. The defaults are relative, so they land next to the compose file
    and the app is self-contained.
 
    Point the music mount at your actual library. Under CasaOS or ZimaOS use

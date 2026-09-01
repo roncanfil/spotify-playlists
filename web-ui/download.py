@@ -484,6 +484,53 @@ def output_basename(artist, track_padded, track_title):
     return sanitize_filename(f"{artist} - {track_padded} - {track_title}")
 
 
+def _track_seconds(path):
+    """Duration in whole seconds, or -1 if it cannot be read."""
+    try:
+        from mutagen import File as MutagenFile
+
+        probe = MutagenFile(path)
+        if probe is not None and probe.info is not None:
+            return int(round(probe.info.length))
+    except Exception:
+        pass
+    return -1
+
+
+def write_m3u(output_dir, playlist_name, entries):
+    """
+    Write "<playlist_name>.m3u" into output_dir, listing `entries` in playlist
+    order. Returns the path written, or None if there was nothing to write.
+
+    `entries` is a list of (filename, artist, title). Filenames are stored
+    relative, so the folder can be moved or copied and the playlist still
+    resolves.
+
+    Extended M3U (#EXTINF) rather than a bare filename list: it is what makes
+    players show "Artist - Title" and a scrub length instead of a filename.
+    Durations are read from the files, so a cancelled or partial run still
+    yields a valid playlist of whatever actually landed. Files that have gone
+    missing are skipped rather than written as dead entries.
+    """
+    present = [e for e in entries if os.path.exists(os.path.join(output_dir, e[0]))]
+    if not present:
+        return None
+
+    lines = ["#EXTM3U"]
+    for filename, artist, title in present:
+        seconds = _track_seconds(os.path.join(output_dir, filename))
+        label = f"{artist} - {title}" if artist and title else (title or artist or filename)
+        lines.append(f"#EXTINF:{seconds},{label}")
+        lines.append(filename)
+
+    path = os.path.join(output_dir, f"{playlist_name}.m3u")
+    # UTF-8 without BOM. Strictly .m3u8 is the UTF-8 variant, but .m3u is what
+    # players and NAS scanners actually look for, and they read UTF-8 fine.
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(lines) + "\n")
+    return path
+
+
 def song_exists(output_dir, basename, ext):
     """Check if song already exists in the output directory"""
     path = os.path.join(output_dir, f"{basename}.{ext}")
@@ -740,6 +787,8 @@ def process_playlist(
         yield {"type": "warning", "message": w}
 
     downloaded = skipped = failed = 0
+    # (filename, artist, title) in playlist order, for the .m3u at the end.
+    m3u_entries = []
 
     for playlist_index, row in enumerate(rows, start=1):
         if should_cancel is not None and should_cancel():
@@ -772,6 +821,8 @@ def process_playlist(
 
         if song_exists(output_dir, basename, ext):
             skipped += 1
+            # Already on disk from an earlier run -- still belongs in the .m3u.
+            m3u_entries.append((f"{basename}.{ext}", artist, track_title))
             yield {
                 "type": "skip",
                 "index": playlist_index,
@@ -793,6 +844,7 @@ def process_playlist(
                 album_artist, track_tag, meta_date, genre, bitrate, audio_format,
             )
             downloaded += 1
+            m3u_entries.append((f"{basename}.{ext}", artist, track_title))
             yield {
                 "type": "track_done",
                 "index": playlist_index,
@@ -809,6 +861,15 @@ def process_playlist(
                 "error": str(e),
             }
 
+    playlist_file = None
+    try:
+        playlist_file = write_m3u(
+            output_dir, get_output_dir(csv_file), m3u_entries
+        )
+    except OSError as e:
+        # Never fail a finished download over the playlist file.
+        yield {"type": "warning", "message": f"Could not write the .m3u: {e}"}
+
     yield {
         "type": "summary",
         "total": total_songs,
@@ -816,6 +877,7 @@ def process_playlist(
         "skipped": skipped,
         "failed": failed,
         "output_dir": output_dir,
+        "playlist_file": os.path.basename(playlist_file) if playlist_file else None,
     }
 
 

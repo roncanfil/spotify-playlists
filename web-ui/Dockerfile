@@ -31,8 +31,6 @@ RUN chmod +x /app/entrypoint.sh
 ENV PYTHONPATH=/data/ytdlp \
     PYTHONUNBUFFERED=1 \
     MUSIC_DIR=/music \
-    PLAYLIST_DIR=/playlists \
-    STATE_DIR=/data \
     YTDLP_UPGRADE_DIR=/data/ytdlp \
     AUTO_UPDATE_YTDLP=1 \
     PORT=8765

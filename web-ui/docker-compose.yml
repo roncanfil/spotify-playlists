@@ -35,15 +35,13 @@ services:
 
       # Paths inside the container; they match the mounts below.
       MUSIC_DIR: /music
-      PLAYLIST_DIR: /data/playlists
-      STATE_DIR: /data
       YTDLP_UPGRADE_DIR: /data/ytdlp
       BGUTIL_POT_BASE_URL: http://bgutil-provider:4416
     volumes:
-      # EDIT host paths — left of each colon. Created if missing.
-      # Your library. Downloads land here, one folder per playlist.
+      # EDIT host path — your library. Each playlist becomes a folder holding
+      # its tracks, its .csv and its .m3u.
       - ./music:/music
-      # App data: playlist CSVs, the Spotify token, yt-dlp updates.
+      # App data: the Spotify token and yt-dlp updates. Small; leave it be.
       - ./data:/data
     depends_on:
       - bgutil-provider

@@ -3,8 +3,8 @@ Web UI for the playlist downloader.
 
 Wraps download.process_playlist so the browser and the standalone script run
 identical logic. Playlists come either from an uploaded CSV or straight from
-Spotify; both paths end up as a CSV in PLAYLIST_DIR and a job on one serial
-queue.
+Spotify; both paths end up as one folder under MUSIC_DIR holding that
+playlist's CSV, its tracks and its .m3u, plus a job on one serial queue.
 """
 
 import functools
@@ -27,8 +27,15 @@ import spotify as sp
 app = Flask(__name__)
 
 MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music")
-PLAYLIST_DIR = os.environ.get("PLAYLIST_DIR", "/playlists")
-STATE_DIR = os.environ.get("STATE_DIR", "/data")
+
+# Every playlist is one folder under MUSIC_DIR holding its own CSV, its tracks
+# and its .m3u, so there is no separate playlist directory to configure.
+#
+# /data is fixed rather than configurable: the image sets
+# PYTHONPATH=/data/ytdlp so yt-dlp upgrades outrank the bundled copy, and a
+# STATE_DIR that pointed elsewhere would silently disable those upgrades.
+STATE_DIR = "/data"
+
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
 PORT = os.environ.get("PORT", "8765")
 
@@ -48,7 +55,6 @@ MAX_RECENT = 25
 STARTUP_WARNINGS = []
 for _label, _path in (
     ("MUSIC_DIR", MUSIC_DIR),
-    ("PLAYLIST_DIR", PLAYLIST_DIR),
     ("STATE_DIR", STATE_DIR),
 ):
     try:
@@ -83,11 +89,20 @@ def require_auth(view):
     return wrapped
 
 
-def safe_csv_name(name):
-    """A filesystem-safe .csv basename; also becomes the output folder name."""
+def safe_playlist_name(name):
+    """A filesystem-safe playlist name: the folder, the CSV stem and the .m3u."""
     stem = re.sub(r"[^A-Za-z0-9._ &()-]", "_", (name or "playlist").strip())
     stem = re.sub(r"\s+", " ", stem).strip(" .") or "playlist"
-    return f"{stem[:80]}.csv"
+    return stem[:80]
+
+
+def playlist_csv_path(stem):
+    """<MUSIC_DIR>/<stem>/<stem>.csv -- the CSV lives with the tracks it made.
+
+    download.py derives the output folder from the CSV's own filename, so
+    naming the CSV after its folder makes the tracks land beside it.
+    """
+    return os.path.join(MUSIC_DIR, stem, f"{stem}.csv")
 
 
 class Job:
@@ -342,11 +357,15 @@ def ytdlp_version():
 
 
 def list_playlists():
+    """Playlist folders under MUSIC_DIR that contain their own <name>.csv."""
     try:
-        names = [f for f in os.listdir(PLAYLIST_DIR) if f.lower().endswith(".csv")]
+        entries = os.listdir(MUSIC_DIR)
     except OSError:
         return []
-    return sorted(names)
+    return sorted(
+        name for name in entries
+        if os.path.isfile(os.path.join(MUSIC_DIR, name, f"{name}.csv"))
+    )
 
 
 # ---------------------------------------------------------------- pages
@@ -424,17 +443,23 @@ def api_start():
 
     upload = request.files.get("csv")
     if upload and upload.filename:
-        safe = safe_csv_name(os.path.splitext(os.path.basename(upload.filename))[0])
         if not (upload.filename or "").lower().endswith(".csv"):
             return jsonify({"error": "Please upload a .csv file."}), 400
-        csv_path = os.path.join(PLAYLIST_DIR, safe)
+        stem = safe_playlist_name(
+            os.path.splitext(os.path.basename(upload.filename))[0]
+        )
+        csv_path = playlist_csv_path(stem)
+        try:
+            os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+        except OSError as e:
+            return jsonify({"error": f"Could not create the playlist folder: {e}"}), 500
         upload.save(csv_path)
         source = "upload"
     else:
         chosen = request.form.get("playlist", "")
         if not chosen or chosen not in list_playlists():
             return jsonify({"error": "Pick a playlist or upload a CSV."}), 400
-        csv_path = os.path.join(PLAYLIST_DIR, chosen)
+        csv_path = playlist_csv_path(chosen)
         source = "saved"
 
     job = Job(csv_path, bitrate, audio_format, source=source)
@@ -615,7 +640,8 @@ def spotify_download():
     # the user a portable artifact, exactly like an Exportify download.
     try:
         name = request.form.get("name") or spotify.playlist_name(playlist_id)
-        csv_path = os.path.join(PLAYLIST_DIR, safe_csv_name(name))
+        csv_path = playlist_csv_path(safe_playlist_name(name))
+        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
         count = spotify.write_playlist_csv(playlist_id, csv_path)
     except sp.SpotifyError as e:
         return jsonify({"error": str(e)}), 400

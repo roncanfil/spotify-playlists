@@ -48,18 +48,36 @@ Portainer or Dockge, which cannot supply a `.env`.
 | Setting | Default | Purpose |
 |---|---|---|
 | host port in `ports:` | `8765` | Port the UI listens on. Left side only |
-| `/music` mount | `./music` | Finished audio, one folder per playlist |
-| `/data` mount | `./data` | Playlist CSVs, the Spotify token, yt-dlp updates |
+| `/music` mount | `./music` | One folder per playlist: tracks, its `.csv`, its `.m3u` |
+| `/data` mount | `./data` | The Spotify token and yt-dlp updates |
 | `APP_PASSWORD` | *(empty)* | Blank = no login. Any username; password is checked |
 | `AUTO_UPDATE_YTDLP` | `1` | Re-install latest yt-dlp on each start |
 | `SPOTIFY_CLIENT_ID` | *(empty)* | Blank hides the Spotify tab |
 | `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8765/callback` | Must match the Spotify dashboard exactly, port included |
 
-`MUSIC_DIR`, `PLAYLIST_DIR`, `STATE_DIR` and `YTDLP_UPGRADE_DIR` are the paths
-*inside* the container and match the mount targets; leave them alone. Note that
-`STATE_DIR` cannot move off `/data` without also overriding `PYTHONPATH`, which
-the image sets to `/data/ytdlp` so yt-dlp upgrades take precedence over the
-bundled copy.
+`MUSIC_DIR` is the only path worth changing, and only via its mount. There is
+no `PLAYLIST_DIR`: a playlist *is* a folder under `MUSIC_DIR`, holding its
+tracks, the CSV it came from, and a generated `.m3u`. `/data` is hardcoded
+rather than configurable, because the image sets `PYTHONPATH=/data/ytdlp` so
+yt-dlp upgrades outrank the bundled copy — a movable state directory would
+silently disable them.
+
+### What a playlist folder looks like
+
+```
+music/
+└── Lenox Ave/
+    ├── Lenox Ave.csv                     the playlist it came from
+    ├── Lenox Ave.m3u                     generated after each run
+    ├── Tycho - 01 - Sunrise.mp3
+    └── Bonobo - 02 - Café Solo.mp3
+```
+
+The `.m3u` is extended M3U — `#EXTINF` duration and `Artist - Title` per entry,
+with relative filenames, so the folder can be moved or copied and the playlist
+still resolves. It is rewritten at the end of every run and lists the tracks
+that are actually on disk, so a cancelled or partly failed run still leaves a
+valid playlist. Tracks skipped because you already had them are included.
 
 ## 🎧 Spotify setup
 
@@ -178,7 +196,7 @@ same without a rebuild. If it still fails, pull a newer image:
 
 ```bash
 pip install -r requirements.txt
-MUSIC_DIR=/path/to/music PLAYLIST_DIR=/path/to/csvs \
+MUSIC_DIR=/path/to/music \
   waitress-serve --host=0.0.0.0 --port=8765 --threads=8 app:app
 ```
 

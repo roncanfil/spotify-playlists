@@ -305,7 +305,11 @@ class SpotifyClient:
                     "id": pl.get("id"),
                     "name": pl.get("name") or "(untitled)",
                     "owner": (pl.get("owner") or {}).get("display_name") or "",
-                    "tracks": (pl.get("tracks") or {}).get("total", 0),
+                    # Spotify's Feb 2026 migration renamed this from
+                    # "tracks" to "items"; read both so it works either way.
+                    "tracks": (
+                        pl.get("items") or pl.get("tracks") or {}
+                    ).get("total", 0),
                     "image": (pl.get("images") or [{}])[0].get("url")
                     if pl.get("images")
                     else None,
@@ -342,11 +346,17 @@ class SpotifyClient:
         if playlist_id == LIKED_SONGS_ID:
             items = self._paged("/me/tracks", {"limit": 50})
         else:
-            items = self._paged(f"/playlists/{playlist_id}/tracks", {"limit": 100})
+            # /playlists/{id}/items replaced /playlists/{id}/tracks in
+            # Spotify's Feb 2026 migration. The old path now returns 403 for
+            # apps in Development Mode, which is every self-hosted install.
+            items = self._paged(f"/playlists/{playlist_id}/items", {"limit": 100})
 
         rows, artist_ids = [], []
         for item in items:
-            track = (item or {}).get("track") or {}
+            # "item" on the new playlist endpoint, "track" on /me/tracks and
+            # on the old response shape.
+            item = item or {}
+            track = item.get("item") or item.get("track") or {}
             # Local files and podcast episodes have no usable id/artists.
             if not track or track.get("type") not in (None, "track"):
                 continue
@@ -355,7 +365,7 @@ class SpotifyClient:
             album = track.get("album") or {}
             artists = track.get("artists") or []
             album_artists = album.get("artists") or []
-            added_by = ((item or {}).get("added_by") or {}).get("id") or ""
+            added_by = (item.get("added_by") or {}).get("id") or ""
 
             for a in artists:
                 if a.get("id"):

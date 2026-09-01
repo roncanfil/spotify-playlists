@@ -562,13 +562,13 @@ $('btn-update').addEventListener('click', async () => {
 });
 
 /* ---------- poll ---------- */
-async function poll() {
+async function refresh() {
   let d;
   try {
     const r = await fetch('/api/state');
-    if (r.status === 401) { location.href = '/login'; return; }
+    if (r.status === 401) { location.href = '/login'; return false; }
     d = await r.json();
-  } catch (e) { return; }
+  } catch (e) { return false; }
   $('signout').hidden = !d.auth_enabled;
 
   $('ytdlp').textContent = d.ytdlp;
@@ -602,13 +602,41 @@ async function poll() {
   $('pill').textContent = d.current
     ? `downloading · ${d.current.done}/${d.current.total}`
     : (waiting ? `${waiting} waiting` : 'idle');
+
+  return n > 0;   // something is running or queued
 }
+
+/* ---------- adaptive polling ----------
+   This used to be setInterval(poll, 1500): a request every 1.5s forever, even
+   with nothing running and even in a hidden tab, and overlapping requests
+   whenever the server was slower than the interval. Now it self-schedules —
+   fast only while a job is active, slow when idle, and stopped entirely while
+   the tab is hidden, catching up the moment it is shown again. */
+const POLL_ACTIVE = 1500;
+const POLL_IDLE = 20000;
+let pollTimer = null;
+let polling = false;
+
+async function poll() {
+  clearTimeout(pollTimer);
+  if (polling) return;           // never stack requests
+  polling = true;
+  let active = false;
+  try { active = await refresh(); } finally { polling = false; }
+  if (!document.hidden) {
+    pollTimer = setTimeout(poll, active ? POLL_ACTIVE : POLL_IDLE);
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) clearTimeout(pollTimer);
+  else poll();                   // refresh immediately on return
+});
 
 loadSettings();
 renderOutput();
 showTab('spotify');
 poll();
-setInterval(poll, 1500);
 </script>
 </body>
 </html>

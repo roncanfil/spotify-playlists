@@ -48,9 +48,9 @@ Portainer or Dockge, which cannot supply a `.env`.
 | Setting | Default | Purpose |
 |---|---|---|
 | host port in `ports:` | `8765` | Port the UI listens on. Left side only |
-| `/music` mount | `/DATA/Media/Music` | Where finished music is written |
-| `/playlists` mount | `/DATA/AppData/playlist-downloader/playlists` | Where CSVs live; uploads land here |
-| `/data` mount | `/DATA/AppData/playlist-downloader/state` | yt-dlp upgrades and the Spotify token |
+| `/music` mount | `./music` | Where finished music is written |
+| `/playlists` mount | `./playlists` | Where CSVs live; uploads land here |
+| `/data` mount | `./state` | yt-dlp upgrades and the Spotify token |
 | `APP_PASSWORD` | *(empty)* | Blank = no login. Any username; password is checked |
 | `AUTO_UPDATE_YTDLP` | `1` | Re-install latest yt-dlp on each start |
 | `SPOTIFY_CLIENT_ID` | *(empty)* | Blank hides the Spotify tab |

@@ -12,7 +12,7 @@
 # testing a build locally before tagging a release.
 set -euo pipefail
 
-IMAGE="${IMAGE:-ghcr.io/roncanfil/spotify-playlists-to-mp3}"
+IMAGE="${IMAGE:-ghcr.io/roncanfil/spotify-playlists}"
 PLATFORMS="${PLATFORMS:-linux/amd64}"
 TAG="${1:-}"
 

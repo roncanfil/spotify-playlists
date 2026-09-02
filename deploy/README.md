@@ -4,7 +4,7 @@ The image is prebuilt and published to GitHub Container Registry, so nothing is
 compiled on the server. It is public — pulling needs no login.
 
 ```
-ghcr.io/roncanfil/spotify-playlists-to-mp3:latest
+ghcr.io/roncanfil/spotify-playlists:latest
 ```
 
 There is exactly one compose file for every deployment target:
@@ -67,7 +67,7 @@ The four things you may want to change are marked `EDIT 1`–`EDIT 4` in the fil
 
 ```bash
 mkdir -p ~/playlist-downloader && cd ~/playlist-downloader
-curl -fsSLO https://raw.githubusercontent.com/roncanfil/spotify-playlists-to-MP3/main/web-ui/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/roncanfil/spotify-playlists/main/web-ui/docker-compose.yml
 nano docker-compose.yml    # set the volume paths, and a password if exposed
 docker compose up -d
 ```
@@ -225,7 +225,7 @@ the workflow.
 
 Two images are pulled, from two places:
 
-- **`ghcr.io/roncanfil/spotify-playlists-to-mp3`** — this project, on GitHub
+- **`ghcr.io/roncanfil/spotify-playlists`** — this project, on GitHub
   Container Registry.
 - **`brainicism/bgutil-ytdlp-pot-provider`** — the POT provider sidecar, from
   Docker Hub. Upstream publishes there only; there is no GHCR copy. It solves

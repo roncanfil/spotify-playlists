@@ -16,7 +16,7 @@ audio from YouTube.
 The image is published publicly on GHCR — nothing to build, no login to pull:
 
 ```
-ghcr.io/roncanfil/spotify-playlists-to-mp3:latest
+ghcr.io/roncanfil/spotify-playlists:latest
 ```
 
 Supports `linux/amd64` and `linux/arm64`.
@@ -32,7 +32,7 @@ volume paths.
 
 ```bash
 mkdir -p ~/playlist-downloader && cd ~/playlist-downloader
-curl -fsSLO https://raw.githubusercontent.com/roncanfil/spotify-playlists-to-MP3/main/web-ui/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/roncanfil/spotify-playlists/main/web-ui/docker-compose.yml
 nano docker-compose.yml     # set the volume paths and a password
 docker compose up -d
 ```
@@ -51,7 +51,7 @@ To build from source instead of pulling:
 
 ```bash
 cd web-ui
-docker build -t ghcr.io/roncanfil/spotify-playlists-to-mp3:latest .
+docker build -t ghcr.io/roncanfil/spotify-playlists:latest .
 docker compose up -d
 ```
 

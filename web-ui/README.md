@@ -37,7 +37,7 @@ Contributors: build the image under the tag the compose file expects, and
 compose will use your local build instead of pulling.
 
 ```bash
-docker build -t ghcr.io/roncanfil/spotify-playlists-to-mp3:latest .
+docker build -t ghcr.io/roncanfil/spotify-playlists:latest .
 docker compose up -d
 ```
 

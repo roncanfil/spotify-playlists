@@ -4,8 +4,8 @@ FROM python:3.13-slim
 # is what makes the package page show the README and inherit repo permissions.
 # revision/version/created are passed by deploy/build-and-push.sh, since they
 # change every build and would otherwise bust the layer cache.
-LABEL org.opencontainers.image.source="https://github.com/roncanfil/spotify-playlists-to-MP3" \
-      org.opencontainers.image.url="https://github.com/roncanfil/spotify-playlists-to-MP3" \
+LABEL org.opencontainers.image.source="https://github.com/roncanfil/spotify-playlists" \
+      org.opencontainers.image.url="https://github.com/roncanfil/spotify-playlists" \
       org.opencontainers.image.title="Playlist Downloader" \
       org.opencontainers.image.description="Web UI for downloading Spotify playlists as tagged MP3 or FLAC files." \
       org.opencontainers.image.licenses="NOASSERTION"

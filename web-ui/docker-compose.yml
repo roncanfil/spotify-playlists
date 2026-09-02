@@ -1,11 +1,11 @@
-# Playlist Downloader — https://github.com/roncanfil/spotify-playlists-to-MP3
+# Playlist Downloader — https://github.com/roncanfil/spotify-playlists
 # Setup and troubleshooting: deploy/README.md
 
 name: playlist-downloader
 
 services:
   downloader:
-    image: ghcr.io/roncanfil/spotify-playlists-to-mp3:latest
+    image: ghcr.io/roncanfil/spotify-playlists:latest
     container_name: playlist-downloader
     restart: unless-stopped
     ports:

@@ -29,6 +29,8 @@ import spotify as sp
 
 app = Flask(__name__)
 
+APP_VERSION = os.environ.get("APP_VERSION", "dev")
+
 MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music")
 
 # Every playlist is one folder under MUSIC_DIR holding its own CSV, its tracks
@@ -477,7 +479,9 @@ def index():
 
 @app.get("/healthz")
 def healthz():
-    return jsonify({"ok": True})
+    # Version is here as well as in /api/state: this endpoint needs no login,
+    # so "which build is actually running?" is answerable without one.
+    return jsonify({"ok": True, "version": APP_VERSION})
 
 
 # ---------------------------------------------------------------- state
@@ -499,6 +503,7 @@ def api_state():
             # Drives the Sign out link; there is nothing to sign out of when
             # no password is configured.
             "auth_enabled": bool(APP_PASSWORD),
+            "app_version": APP_VERSION,
             "formats": list(core.SUPPORTED_FORMATS),
             "default_format": core.DEFAULT_FORMAT,
             "format_notes": dict(core.FORMAT_NOTES),

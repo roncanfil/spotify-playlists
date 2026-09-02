@@ -243,7 +243,8 @@
         on boot.
       </p>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <span class="ver">Running version <b id="ytdlp">…</b></span>
+        <span class="ver">Running version <b id="ytdlp">…</b>
+          · app <b id="appver">…</b></span>
         <span class="spacer"></span>
         <button class="btn" id="btn-update">Check for update</button>
       </div>
@@ -572,6 +573,7 @@ async function refresh() {
   $('signout').hidden = !d.auth_enabled;
 
   $('ytdlp').textContent = d.ytdlp;
+  $('appver').textContent = d.app_version || 'dev';
   if (d.bitrate_notes && !Object.keys(NOTES).length) {
     NOTES = d.bitrate_notes;
     FMT_NOTES = d.format_notes || {};

@@ -28,7 +28,12 @@ RUN chmod +x /app/entrypoint.sh
 
 # /data/ytdlp is a mounted volume ahead of site-packages, so yt-dlp upgrades
 # survive image rebuilds.
-ENV PYTHONPATH=/data/ytdlp \
+# Stamped by CI from the git tag; "dev" for a local build. Surfaced in the UI
+# and /healthz so a running install can be identified without shell access.
+ARG APP_VERSION=dev
+
+ENV APP_VERSION=$APP_VERSION \
+    PYTHONPATH=/data/ytdlp \
     PYTHONUNBUFFERED=1 \
     MUSIC_DIR=/music \
     YTDLP_UPGRADE_DIR=/data/ytdlp \

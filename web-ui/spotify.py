@@ -255,7 +255,30 @@ class SpotifyClient:
                 detail = resp.json().get("error", {}).get("message", "")
             except ValueError:
                 pass
-            raise SpotifyError(f"Spotify API error {resp.status_code}: {detail}")
+            path = (url if url.startswith("http") else f"{API_BASE}{url}")
+            path = path.replace(API_BASE, "") or "/"
+            path = path.split("?", 1)[0]
+
+            # A bare "403: Forbidden" told the user nothing and sent us looking
+            # for a bug in this client. Spotify returns it for a playlist a
+            # Development Mode app is not allowed to read, which is the common
+            # case, so say so and give the way around it.
+            if resp.status_code == 403 and "/playlists/" in path:
+                raise SpotifyError(
+                    "Spotify refused this playlist (403). Apps in Development "
+                    "Mode can generally only read playlists you created "
+                    "yourself. Playlists you merely follow, and Spotify's own "
+                    "algorithmic ones such as Discover Weekly and Release "
+                    "Radar, are refused no matter what this app does. "
+                    "Workarounds: request a quota extension on the Spotify "
+                    "dashboard, or export the playlist at exportify.app and "
+                    "queue it from the CSV tab."
+                    + (f" Spotify said: {detail}" if detail else "")
+                )
+            raise SpotifyError(
+                f"Spotify API error {resp.status_code} on {path}"
+                + (f": {detail}" if detail else "")
+            )
         return resp.json()
 
     def _paged(self, url, params=None, limit_pages=200):

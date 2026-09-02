@@ -108,21 +108,10 @@ Restarting is *not* how you get a new version of this app, though — see below.
 docker compose pull && docker compose up -d
 ```
 
-Both halves matter. `pull` fetches the image; `up -d` replaces the container
-with it. **A restart, or stopping and starting the app in CasaOS, does
-neither** — it reuses the image you already have, so nothing appears to change.
+Both halves matter. **A restart updates nothing** — it reuses the image already
+on disk. `curl -s http://<host>:8765/healthz` reports which build is running.
 
-Check which build is actually running, no login required:
-
-```bash
-curl -s http://<host>:8765/healthz
-# {"ok":true,"version":"1.7.0"}
-```
-
-The version also shows in the UI footer. If it changed but the page looks the
-same, hard-refresh once (⌘⇧R) — releases from 1.6.0 on send `Cache-Control:
-no-store`, so that is only needed when escaping a page cached by an older
-build.
+More in [`deploy/README.md`](deploy/README.md).
 
 ## ⚖️ Legal notice
 

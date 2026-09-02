@@ -1,91 +1,60 @@
 # Deploying on a server or NAS
 
-The image is prebuilt and published to GitHub Container Registry, so nothing is
-compiled on the server. It is public — pulling needs no login.
+The image is prebuilt, public, and multi-arch (`amd64` and `arm64`) — nothing is
+compiled on the server and pulling needs no login.
 
 ```
 ghcr.io/roncanfil/spotify-playlists:latest
 ```
 
-There is exactly one compose file for every deployment target:
-
-**[`../web-ui/docker-compose.yml`](../web-ui/docker-compose.yml)**
-
-It uses no `${VARIABLE}` substitution and needs no `.env`, because the
-paste-a-file installers below cannot supply one. Every setting is a literal you
-edit in place.
-
-## A login page, if you want one
-
-Set `APP_PASSWORD` and the app serves a centred password page before anything
-else; leave it blank and the app is wide open. Only the password is checked,
-there is no username, and a **Sign out** link appears in the header. `/healthz`
-stays outside the gate so container healthchecks and uptime probes keep working
-without credentials.
-
-Set it if the app is reachable from anywhere but a LAN you trust.
+One compose file covers every target:
+**[`../web-ui/docker-compose.yml`](../web-ui/docker-compose.yml)**. It has no
+`${VARIABLE}` substitution and needs no `.env`, because the paste-a-file
+installers below cannot supply one — every setting is a literal you edit in
+place, and the file's own comments mark the four worth changing.
 
 ## CasaOS / ZimaOS / Portainer / Dockge
 
-These import a single compose file and give you no `.env`, so
-`../web-ui/docker-compose.yml` is written with literal values and no `${VARIABLE}`
-substitution anywhere. Paste it as-is and it works.
+Paste the file as-is.
 
-**CasaOS:** App Store → **Custom Install** → **Import** → paste the file → adjust
-the four `EDIT` markers → Install.
+- **CasaOS:** App Store → **Custom Install** → **Import** → paste → Install
+- **Portainer:** Stacks → **Add stack** → **Web editor** → paste → Deploy
 
-**Portainer:** Stacks → **Add stack** → **Web editor** → paste → Deploy.
-
-The four things you may want to change are marked `EDIT 1`–`EDIT 4` in the file:
-
-1. **Host port** — default `8765`. Change the left number only; the container
-   always listens on 8765 internally. If you change it, change the port in
-   `SPOTIFY_REDIRECT_URI` to match.
-2. **`APP_PASSWORD`** — blank means no login. Set it if the box is reachable
-   from outside your LAN.
-3. **`SPOTIFY_CLIENT_ID`** — blank hides the Playlists tab; the app still works
-   by CSV upload.
-4. **Volume host paths** — default to the CasaOS convention:
-
-   | Host (default) | Container | Holds |
-   |---|---|---|
-   | `./music` | `/music` | everything that persists |
-
-   **One volume, one decision.** Each playlist becomes a folder under it with
-   its tracks, the `.csv` it came from and a generated `.m3u`. The Spotify
-   token goes in a hidden `.spotify-playlists/` folder there too, so
-   connecting Spotify survives updates without a second volume. yt-dlp's
-   self-updates are not persisted at all — they are reinstalled on every boot.
-
-   The default is relative, so it lands next to the compose file and the app is
-   self-contained. Point it at your actual library instead. Under CasaOS or
-   ZimaOS use an absolute path such as `/DATA/Media/Music`, because CasaOS
-   chooses the project directory and a relative path would end up somewhere you
-   did not pick.
+Set the music path to an absolute one (`/DATA/Media/Music` on CasaOS). The
+default is relative, and CasaOS picks the project directory, so a relative path
+lands somewhere you did not choose.
 
 ## Any Linux box, Proxmox guest, or VPS
 
 ```bash
 mkdir -p ~/spotify-playlists && cd ~/spotify-playlists
 curl -fsSLO https://raw.githubusercontent.com/roncanfil/spotify-playlists/main/web-ui/docker-compose.yml
-nano docker-compose.yml    # set the volume paths, and a password if exposed
+nano docker-compose.yml    # music path, and a password if exposed
 docker compose up -d
 ```
 
-The music mount defaults to `./music`, relative to the compose file. Point it at
-your actual library — `/srv/music`, `/mnt/storage/music`, wherever it is. Docker
-creates the directory if it is missing. Nothing else needs a path.
+On **Proxmox**, run that inside a Docker LXC or VM. Nothing here needs
+privileged mode, host networking, or a particular kernel. For an unprivileged
+LXC with host media bind-mounted, map the UID/GID so the container can write.
 
-## Proxmox
+## Storage
 
-Proxmox has no native container-app store, so run Docker inside a guest and then
-follow either section above:
+One volume: your music library. Each playlist becomes a folder inside it holding
+its tracks, the `.csv` it came from, and a generated `.m3u`.
 
-- **LXC** — lighter. An unprivileged container works; if you bind-mount media
-  from the host, map the UID/GID so the container can write to it.
-- **VM** — better isolated, and avoids LXC nesting and kernel-module quirks.
+The Spotify token lives in a hidden `.spotify-playlists/` folder there too, so
+connecting Spotify survives updates without a second volume. yt-dlp's
+self-updates are deliberately not persisted — they are reinstalled on every
+boot.
 
-Nothing here needs privileged mode, host networking, or a specific kernel.
+## A login page, if you want one
+
+Set `APP_PASSWORD` and the app shows a password page before anything else; leave
+it blank and the app is open. Only the password is checked — there is no
+username — and a **Sign out** link appears in the header. `/healthz` stays
+outside the gate so healthchecks and uptime probes work without credentials.
+
+Set it if the app is reachable from anywhere but a LAN you trust.
 
 ## Updating
 
@@ -93,131 +62,75 @@ Nothing here needs privileged mode, host networking, or a specific kernel.
 docker compose pull && docker compose up -d
 ```
 
-Both halves are required. `pull` fetches the new image; `up -d` recreates the
-container from it.
+Both halves matter: `pull` fetches the image, `up -d` recreates the container
+from it.
 
-> **A restart does not update anything.** Neither does stopping and starting
-> the app in CasaOS, or `docker compose restart`. They all reuse the image
-> already on disk, so the app comes back byte-identical and it looks as though
-> the release did nothing. Only an explicit pull changes the image — in CasaOS
-> that means its **Update** action, not the power toggle.
+> **A restart updates nothing.** Not `docker compose restart`, and not stopping
+> and starting the app in CasaOS — they reuse the image already on disk, so the
+> app comes back identical and it looks as though the release did nothing. In
+> CasaOS use its **Update** action, not the power toggle.
 
-The same applies to editing settings: `docker compose restart` will *not* pick
-up a changed environment variable. `docker compose up -d` will, because it
-recreates the container.
+Editing settings is the same: `restart` will not pick up a changed environment
+variable, `up -d` will.
 
-### Coming from a release before 1.8.0
-
-Two things changed names in 1.8.0, so the first update needs one extra step.
-
-The image moved to `ghcr.io/roncanfil/spotify-playlists` (the repository was
-renamed), and the compose project, the service and the app container are all
-`spotify-playlists` now. Renaming the project and the service makes
-`docker compose up -d` create fresh containers, while `bgutil-provider` kept its
-name — so the old project is still holding it and the new stack cannot start:
-
-```
-Error response from daemon: Conflict. The container name "/bgutil-provider"
-is already in use by container "887ed59cbcb5..."
-```
-
-The old stack keeps running, which makes it look as though nothing happened.
-Take the old one down first:
-
-```bash
-docker compose down          # with the OLD compose file still in place
-# now replace the file with the new one, then
-docker compose up -d
-```
-
-`down` without `-v` is safe here: the only volume is your music bind mount, so
-nothing is deleted. Your Spotify token survives too. It lives in a hidden
-folder inside the music folder, which nothing here touches — and if you are
-coming from before 1.9.0, the app renames that folder from
-`.playlist-downloader/` to `.spotify-playlists/` on first boot and carries the
-token across, so you will not have to reconnect. The boot log says so:
-
-```
-[boot] moved /music/.playlist-downloader -> /music/.spotify-playlists
-```
-
-### Confirming which build is running
+**Confirming which build is running:**
 
 ```bash
 curl -s http://<host>:8765/healthz
-# {"ok":true,"version":"1.7.0"}
+# {"ok":true,"version":"1.10.0"}
 ```
 
-No login needed, so this works from anywhere and is the fastest way to tell a
-stale deploy from a real bug. The version also appears in the UI footer beside
-the yt-dlp version.
+No login needed, so this is the quickest way to tell a stale deploy from a real
+bug. The version also shows in the UI footer. If it changed but the page looks
+the same, hard-refresh once — the front end is inline in the HTML, though
+`Cache-Control: no-store` means that is only needed to escape a page cached by
+an older build.
 
-If the version changed but the page looks unchanged, hard-refresh once (⌘⇧R or
-a private window). All of the front end's JavaScript is inline in the HTML;
-releases from 1.6.0 send `Cache-Control: no-store`, so this is only needed once
-to escape a page cached by an earlier build.
-
-### Finding the compose file on the NAS
-
-If CasaOS installed it and you would rather work in a shell:
+**Finding the compose file** CasaOS created, if you would rather use a shell:
 
 ```bash
 cd "$(docker inspect spotify-playlists \
   --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}')"
 ```
 
-Prefer CasaOS's own settings UI for config changes, though — editing the file by
-hand can leave CasaOS's record out of sync with what is running.
+Prefer CasaOS's settings UI for config changes, though — editing the file by
+hand can leave its record out of sync with what is running.
 
-### Most breakage needs no update at all
-
-yt-dlp is the piece YouTube keeps breaking, and `AUTO_UPDATE_YTDLP=1`
-reinstalls the latest on every boot — so **restarting** is the first thing to
-try for failed downloads, and usually the only thing. That is the one job a
-restart *is* right for.
+**Failing tracks usually need no update.** yt-dlp is the piece YouTube keeps
+breaking and `AUTO_UPDATE_YTDLP=1` reinstalls it on every boot, so a restart is
+the first thing to try. That is the one job a restart *is* right for.
 
 ## Spotify
 
-Optional. Leave `SPOTIFY_CLIENT_ID` blank and the Playlists tab is hidden; the
-app still works by uploading CSVs exported from [Exportify](https://exportify.net).
+Optional — leave `SPOTIFY_CLIENT_ID` blank and the Playlists tab is hidden,
+while CSVs from [Exportify](https://exportify.net) still work.
 
-Spotify apps start in **Development Mode**, which limits what the Web API will
-return. Since their February 2026 API migration, that can mean playlists you
-merely follow are refused with a 403 while ones you created work fine. Their own
-algorithmic playlists — Discover Weekly, Daily Mix, Release Radar — have been
-off-limits to the API since late 2024 and will never work. If your own playlists
-download but followed ones do not, that is the account restriction rather than a
-bug here; a quota extension request on the Spotify dashboard is the only fix.
+The redirect URI is the fiddly part: it **must be HTTPS**, except that a
+loopback address may use plain HTTP. `localhost` is rejected outright. Register
+whichever you use in the [Spotify dashboard](https://developer.spotify.com/dashboard)
+character for character — scheme, host, port and path. No client secret is ever
+needed; the app uses Authorization Code + PKCE.
 
-Spotify's redirect-URI rule is the only fiddly part: **it must be HTTPS**, with
-a single exception — a loopback address may use plain HTTP. `localhost` is
-rejected outright. That gives two valid setups.
-
-### Option 1 — no domain (SSH tunnel)
-
-Only `http://127.0.0.1:<PORT>/callback` works, so the one-time "Connect" click
-has to come from a browser that reaches the app as `127.0.0.1`:
+**No domain** — only `http://127.0.0.1:<PORT>/callback` is accepted, so the
+one-time Connect has to come from a browser that reaches the app as `127.0.0.1`:
 
 ```bash
 ssh -L 8765:127.0.0.1:8765 you@server
-# then open http://127.0.0.1:8765 on your own machine and click Connect
+# then open http://127.0.0.1:8765 locally and click Connect
 ```
 
-A NAS hostname or LAN IP will not be accepted. This is a one-time step — the
-token is saved in the state volume and every user shares it afterwards.
+A NAS hostname or LAN IP will not work. The token is saved afterwards and shared
+by everyone.
 
-### Option 2 — a real domain over HTTPS (recommended)
-
-Once the app is behind a reverse proxy with a TLS certificate, use the real URL
-and the tunnel disappears entirely — anyone can connect from any browser:
+**A real domain over HTTPS** — put the app behind a reverse proxy with a
+certificate and the tunnel disappears; anyone can connect from any browser.
 
 ```yaml
 SPOTIFY_REDIRECT_URI: "https://music.example.com/callback"
 ```
 
-A plain `http://` domain will **not** work; Spotify requires TLS for anything
-that is not a loopback address. Caddy is the least work — two lines of Caddyfile
-gets you an automatic Let's Encrypt certificate:
+A plain `http://` domain will **not** work. Caddy is the least effort, and gets
+a Let's Encrypt certificate automatically:
 
 ```
 music.example.com {
@@ -225,47 +138,48 @@ music.example.com {
 }
 ```
 
-The app needs no changes for this. It generates no absolute URLs, so there is
-no `X-Forwarded-Proto` / ProxyFix problem to solve — it only reads the `code`
-and `state` query parameters that Spotify appends.
+The app needs no changes for this: it generates no absolute URLs, so there is no
+`X-Forwarded-Proto` / ProxyFix problem — `/callback` only reads the `code` and
+`state` query parameters.
 
-### Either way
+### Development Mode limits
 
-Register the exact value in the [Spotify dashboard](https://developer.spotify.com/dashboard)
-— scheme, host, port and path all have to match character for character. If you
-change the host port or the domain, update it in both the compose file and the
-dashboard. No client secret is ever needed: the app uses Authorization Code +
-PKCE.
+Spotify apps start in Development Mode. Since their February 2026 API migration
+that can mean playlists you merely *follow* are refused with a 403 while ones
+you created work fine, and Spotify's own algorithmic playlists — Discover
+Weekly, Daily Mix, Release Radar — have been off-limits since late 2024 and
+never will work.
 
-Or skip Spotify entirely: leave `SPOTIFY_CLIENT_ID` blank and upload CSVs
-exported from [Exportify](https://exportify.net).
+If your own playlists work and followed ones do not, that is the account
+restriction rather than a bug here. A quota extension request on the Spotify
+dashboard is the only fix.
 
 ## Publishing a new image (maintainers)
 
-Tagging is all it takes — [`.github/workflows/publish-image.yml`](../.github/workflows/publish-image.yml)
-builds `linux/amd64` and `linux/arm64` and pushes to GHCR:
+Tagging is all it takes.
+[`.github/workflows/publish-image.yml`](../.github/workflows/publish-image.yml)
+builds `linux/amd64` and `linux/arm64` and pushes to GHCR, authenticating with
+the per-run `GITHUB_TOKEN` — no personal access token involved.
 
 ```bash
-git tag v1.1.0 && git push origin v1.1.0
+git tag v1.11.0 && git push origin v1.11.0
 ```
 
-It authenticates with the per-run `GITHUB_TOKEN`, so no personal access token
-is involved. `workflow_dispatch` lets you publish an arbitrary tag by hand.
-
-[`build-and-push.sh`](build-and-push.sh) does the same from a dev machine and is
-kept for local testing. It needs a classic PAT with `write:packages`, so prefer
-the workflow.
+`workflow_dispatch` publishes an arbitrary tag by hand.
+[`build-and-push.sh`](build-and-push.sh) does the same from a dev machine and
+needs a classic PAT with `write:packages`, so prefer the workflow.
 
 ## A note on registries
 
-Two images are pulled, from two places:
+Two images, from two places:
 
-- **`ghcr.io/roncanfil/spotify-playlists`** — this project, on GitHub
-  Container Registry.
+- **`ghcr.io/roncanfil/spotify-playlists`** — this project, on GitHub Container
+  Registry.
 - **`brainicism/bgutil-ytdlp-pot-provider`** — the POT provider sidecar, from
-  Docker Hub. Upstream publishes there only; there is no GHCR copy. It solves
-  YouTube's "confirm you're not a bot" challenge, which a server IP trips far
-  more often than a home connection does, and it supports amd64 and arm64.
+  Docker Hub, because upstream publishes nowhere else. It answers YouTube's
+  "confirm you're not a bot" challenge, which a server IP trips far more often
+  than a home connection, and supports amd64 and arm64.
 
-To drop the sidecar, delete that service, the `depends_on` entry, and
-`BGUTIL_POT_BASE_URL`. Downloads still work; you will just see more bot checks.
+To drop the sidecar, delete that service, its `depends_on` entry, and
+`BGUTIL_POT_BASE_URL`. Everything still works; you will just see more bot
+checks.

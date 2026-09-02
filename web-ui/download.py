@@ -602,12 +602,44 @@ def create_ydl_opts(
     }
 
 
+def search_queries(query):
+    """
+    Search terms to try, most specific first.
+
+    Spotify joins collaborators with ", ", so a track credited to
+    "evroulth, Chillhop World" becomes a query no YouTube video matches.
+    Dropping the extra artists usually finds it. We deliberately do not fall
+    back to the bare title: that starts matching covers and unrelated songs,
+    and a wrong file is worse than a missing one.
+    """
+    out = [query]
+    artist, sep, title = query.partition(" - ")
+    if sep and ", " in artist:
+        first = artist.split(", ")[0].strip()
+        if first:
+            out.append(f"{first} - {title}".strip())
+    seen, uniq = set(), []
+    for q in out:
+        if q and q not in seen:
+            seen.add(q)
+            uniq.append(q)
+    return uniq
+
+
 def _first_video_entry(info):
-    """Unwrap a ytsearch result down to the video's info dict."""
-    while isinstance(info, dict) and info.get("entries"):
-        entries = info["entries"]
+    """
+    Unwrap a ytsearch result down to the video's info dict, or None.
+
+    A search that matched nothing still returns a container dict, just with an
+    empty "entries" list. Returning that container looked like a video to every
+    caller, which is how "no results" used to surface as a missing output file
+    much further down. Anything still carrying "entries" is a container, not a
+    video, so it yields None.
+    """
+    while isinstance(info, dict) and "entries" in info:
+        entries = info.get("entries")
         if not isinstance(entries, list) or not entries:
-            break
+            return None
         info = entries[0]
     return info if isinstance(info, dict) else None
 
@@ -660,34 +692,52 @@ def download_song(
     # tag the URL and again to download, doubling requests to YouTube.
     entry = None
     used_fallback = False
+    used_query = query
     last_exc = None
-    for player_client in (None, FALLBACK_PLAYER_CLIENT):
-        opts = create_ydl_opts(
-            output_dir, basename, bitrate, audio_format, player_client
-        )
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(f"ytsearch1:{query}", download=True)
-            entry = _first_video_entry(info)
-            last_exc = None
-            used_fallback = player_client is not None
+    tried = search_queries(query)
+    for candidate in tried:
+        for player_client in (None, FALLBACK_PLAYER_CLIENT):
+            opts = create_ydl_opts(
+                output_dir, basename, bitrate, audio_format, player_client
+            )
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(f"ytsearch1:{candidate}", download=True)
+                entry = _first_video_entry(info)
+                last_exc = None
+                used_fallback = player_client is not None
+                used_query = candidate
+                break
+            except Exception as e:
+                last_exc = e
+                # Only the default attempt is worth retrying, and only when the
+                # error says YouTube rejected the client rather than the video.
+                if player_client is None and _is_client_blocked_error(e):
+                    continue
+                break
+        # A search that matched nothing raises nothing, so check for it here
+        # rather than letting it surface later as a missing output file.
+        if entry is not None:
             break
-        except Exception as e:
-            last_exc = e
-            # Only the default attempt is worth retrying, and only when the
-            # error says YouTube rejected the client rather than the video.
-            if player_client is None and _is_client_blocked_error(e):
-                continue
+        if last_exc is not None:
             break
     if last_exc is not None:
         raise last_exc
+    if entry is None:
+        extra = "" if len(tried) == 1 else f" (also tried {tried[-1]!r})"
+        raise LookupError(f"No YouTube result for {query!r}{extra}")
 
     youtube_url = (entry or {}).get("webpage_url") or "Unknown"
     source_label, is_muxed = describe_source(entry)
 
     out_path = os.path.join(output_dir, f"{basename}.{normalize_audio_format(audio_format)}")
     if not os.path.isfile(out_path):
-        raise FileNotFoundError(f"Expected output file missing after download: {out_path}")
+        # The search matched and yt-dlp reported no error, so this is the
+        # extract/transcode step having produced nothing usable.
+        raise FileNotFoundError(
+            f"yt-dlp matched {youtube_url} but produced no "
+            f"{normalize_audio_format(audio_format)} file"
+        )
 
     write_playlist_tags(
         out_path,
@@ -707,6 +757,7 @@ def download_song(
         "source_label": source_label,
         "is_muxed": is_muxed,
         "used_fallback": used_fallback,
+        "used_query": used_query,
     }
 
 

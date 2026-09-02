@@ -325,6 +325,11 @@ class Job:
             detail = ev.get("source_label", "")
             if ev.get("used_fallback"):
                 detail += f" - SABR fallback via '{core.FALLBACK_PLAYER_CLIENT}'"
+            # Say so when the full "A, B - Title" query found nothing and a
+            # trimmed one did, since that changes which track you may have got.
+            used_q = ev.get("used_query")
+            if used_q and used_q != ev.get("query"):
+                detail += f" - matched on '{used_q}'"
             self._add("ok", ev["query"], detail)
         elif kind == "track_error":
             with self._lock:

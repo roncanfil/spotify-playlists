@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Playlist Downloader</title>
+<title>Spotify Playlists</title>
 <style>
   :root {
     --bg:#f6f6f4; --panel:#fff; --ink:#1a1a19; --muted:#6b6b66;
@@ -24,7 +24,7 @@
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
     font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
-  .wrap { max-width:960px; margin:0 auto; padding:22px 18px 64px; }
+  .wrap { max-width:none; margin:0 auto; padding:22px 22px 64px; }
   header { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
   h1 { font-size:21px; margin:0; letter-spacing:-.01em; }
   .spacer { flex:1; }
@@ -72,13 +72,27 @@
   .msg.show { display:block; }
   .msg.err { background:color-mix(in srgb,var(--fail) 14%,transparent); color:var(--fail); }
   .msg.good { background:color-mix(in srgb,var(--ok) 14%,transparent); color:var(--ok); }
-  /* playlist grid */
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
+  /* segmented control */
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px;
+    overflow:hidden; flex:none; }
+  .seg button { background:var(--panel); border:0; padding:7px 11px; cursor:pointer;
+    font-size:12.5px; color:var(--muted); }
+  .seg button.on { background:var(--accent); color:var(--accent-ink); }
+  /* playlist grid — wider cards now the page is full width */
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:12px; }
+  /* list view: one row per playlist, so long names and detail are not clipped */
+  .grid.list { display:block; }
+  .grid.list .card { border-radius:0; border-left:0; border-right:0;
+    border-bottom:0; padding:9px 4px; }
+  .grid.list .card:first-child { border-top:0; }
+  .grid.list .card .nm, .grid.list .card .sub { white-space:normal; }
+  .grid.list .card img, .grid.list .card .ph { width:40px; height:40px; }
   .card { display:flex; gap:11px; padding:11px; border:1px solid var(--line);
     border-radius:9px; background:var(--bg); align-items:center; }
   .card img, .card .ph { width:56px; height:56px; border-radius:6px; object-fit:cover; flex:none;
     background:var(--line); display:flex; align-items:center; justify-content:center;
     font-size:20px; color:var(--muted); }
+  a { color:var(--accent); }
   .card .meta { min-width:0; flex:1; }
   .card .nm { font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden;
     text-overflow:ellipsis; }
@@ -93,6 +107,31 @@
     font-variant-numeric:tabular-nums; }
   .stats b { color:var(--ink); }
   .log { margin-top:6px; max-height:38vh; overflow-y:auto; border-top:1px solid var(--line); }
+  /* track lists: fixed height so streaming entries cannot make the page jump */
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 2px; }
+  .chip { font-size:12px; padding:3px 9px; border-radius:99px; cursor:pointer;
+    border:1px solid var(--line); background:var(--panel); color:var(--muted); }
+  .chip.on { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .chip.fail-chip { color:var(--fail); border-color:var(--fail); }
+  .chip.fail-chip.on { background:var(--fail); border-color:var(--fail); color:#fff; }
+  .tl { max-height:44vh; overflow-y:auto; border-top:1px solid var(--line); }
+  .tl table { width:100%; border-collapse:collapse; font-size:13px; }
+  .tl th { position:sticky; top:0; background:var(--panel); text-align:left;
+    font-weight:600; font-size:12px; color:var(--muted); padding:6px 8px;
+    border-bottom:1px solid var(--line); cursor:pointer; white-space:nowrap; }
+  .tl td { padding:5px 8px; border-bottom:1px solid var(--line);
+    vertical-align:top; word-break:break-word; }
+  .tl tr:hover td { background:var(--bg); }
+  .st { font-size:11px; padding:1px 7px; border-radius:99px; white-space:nowrap;
+    border:1px solid var(--line); color:var(--muted); }
+  .st.ok { color:var(--ok); border-color:var(--ok); }
+  .st.fail { color:var(--fail); border-color:var(--fail); }
+  .st.skip { color:var(--skip); }
+  .st.warn { color:var(--warn); border-color:var(--warn); }
+  .pinbtn { font-size:12px; color:var(--muted); }
+  .failbox { margin-top:12px; border:1px solid var(--fail); border-radius:9px;
+    padding:10px 12px; }
+  .failbox h4 { margin:0 0 6px; font-size:13px; color:var(--fail); }
   .ev { display:flex; gap:9px; padding:7px 2px; border-bottom:1px solid var(--line);
     font-size:13.5px; align-items:flex-start; }
   .ev .ic { width:15px; flex:none; text-align:center; }
@@ -116,7 +155,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>Playlist Downloader</h1>
+    <h1>Spotify Playlists</h1>
     <span class="pill" id="pill">idle</span>
     <form method="post" action="/logout" id="signout" hidden
           style="margin-left:auto">
@@ -172,6 +211,10 @@
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <input type="text" id="sp-filter" placeholder="Filter playlists…" style="flex:1">
+        <div class="seg" id="sp-view" role="group" aria-label="Layout">
+          <button data-view="grid" class="on" title="Grid view">▦ Grid</button>
+          <button data-view="list" title="List view">☰ List</button>
+        </div>
         <span class="ver out-hint"></span>
       </div>
       <div class="grid" id="sp-grid"></div>
@@ -203,14 +246,12 @@
       <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">
         The playlist name becomes the folder name, and it gets the CSV and an
         <code>.m3u</code> alongside the tracks. Tracks you already have are
-        skipped. Exportify's CSV has no genre column, so genre tags stay
-        empty — the Spotify tab fills those in.
+        skipped.
       </p>
-      <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <button class="btn primary" id="btn-start">Add to queue</button>
+      <div style="margin-top:18px;display:flex;flex-direction:column;
+                  align-items:center;gap:8px">
+        <button class="btn primary" id="btn-start">Process Playlist</button>
         <span class="ver out-hint"></span>
-        <span class="spacer"></span>
-        <span class="ver" id="outdir"></span>
       </div>
     </div>
   </div>
@@ -256,6 +297,7 @@
     <div class="panel">
       <h3>Now downloading</h3>
       <div id="q-current"><div class="empty">Nothing running.</div></div>
+      <div id="q-failbox"></div>
     </div>
     <div class="panel">
       <div style="display:flex;align-items:center">
@@ -276,11 +318,11 @@ const $ = id => document.getElementById(id);
 const ICON = { ok:'✓', fail:'✕', skip:'⏭', warn:'!', info:'·', error:'✕' };
 const LEVEL = { 128:'warn', 192:'ok', 320:'' };
 let NOTES = {}, FMT_NOTES = {}, spLoaded = false, spPlaylists = [],
-    lastEvents = -1, curTab = 'spotify';
+    spConnected = false, curTab = 'spotify';
 
 /* Output settings persist per browser. Wrapped because private windows and
    blocked site-data make localStorage throw rather than return null. */
-const SETTINGS = { format: 'mp3', bitrate: '192' };
+const SETTINGS = { format: 'mp3', bitrate: '192', view: 'grid' };
 function loadSettings() {
   try {
     const raw = localStorage.getItem('pd-output');
@@ -309,9 +351,12 @@ async function api(path, fields) {
       : new URLSearchParams(fields);
   }
   const r = await fetch(path, opts);
-  if (r.status === 401) { location.href = '/login'; throw new Error('Signed out.'); }
   let j = {};
   try { j = await r.json(); } catch (e) {}
+  if (r.status === 401 && j.login) {
+    location.href = '/login';
+    throw new Error('Signed out.');
+  }
   if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
   return j;
 }
@@ -326,7 +371,7 @@ function showTab(name) {
     b.classList.toggle('on', b.dataset.tab === name));
   ['spotify','csv','queue','settings'].forEach(v =>
     $('view-' + v).classList.toggle('on', v === name));
-  if (name === 'spotify' && !spLoaded) loadSpotify();
+  if (name === 'spotify' && spConnected && !spLoaded) loadSpotify();
 }
 
 /* ---------- output settings ---------- */
@@ -409,12 +454,26 @@ function renderPlaylists() {
         <div class="sub">${p.tracks} track${p.tracks === 1 ? '' : 's'}${
           p.owner ? ' · ' + esc(p.owner) : ''}</div>
       </div>
-      <button class="mini" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Download</button>
+      <button class="mini" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Save CSV</button>
     </div>`;
   }).join('');
   $('sp-grid').querySelectorAll('button[data-id]').forEach(b =>
     b.addEventListener('click', () => queuePlaylist(b, b.dataset.id, b.dataset.name)));
 }
+
+function applyView() {
+  const list = SETTINGS.view === 'list';
+  $('sp-grid').classList.toggle('list', list);
+  $('sp-view').querySelectorAll('button').forEach(b =>
+    b.classList.toggle('on', b.dataset.view === SETTINGS.view));
+}
+$('sp-view').addEventListener('click', e => {
+  const b = e.target.closest('button[data-view]');
+  if (!b) return;
+  SETTINGS.view = b.dataset.view;
+  saveSettings();
+  applyView();
+});
 
 async function queuePlaylist(btn, id, name) {
   btn.disabled = true;
@@ -492,20 +551,93 @@ $('btn-clear').addEventListener('click', async () => {
   } catch (e) { flash(e.message, false); }
 });
 
+/* ---------- track lists ----------
+   Shared by the running job and by an expanded Recent job. Both read the same
+   per-track events the server already records, so nothing new is stored. */
+
+const KINDS = ['ok', 'skip', 'fail'];
+const KIND_NAME = { ok:'Downloaded', skip:'Skipped', fail:'Failed',
+                    warn:'Warning', info:'Info', error:'Error' };
+const KIND_RANK = { fail:0, warn:1, ok:2, skip:3, info:4, error:0 };
+
+function isTrack(e) { return KINDS.includes(e.kind); }
+
+function chipRow(counts, active, prefix) {
+  const mk = (key, label, extra) =>
+    `<button class="chip ${extra || ''} ${active === key ? 'on' : ''}" `
+    + `data-${prefix}="${key}">${label}</button>`;
+  return `<div class="chips">
+    ${mk('all', 'All ' + counts.all)}
+    ${mk('ok', 'Downloaded ' + counts.ok)}
+    ${mk('skip', 'Skipped ' + counts.skip)}
+    ${mk('fail', 'Failed ' + counts.fail, 'fail-chip')}
+  </div>`;
+}
+
+function countKinds(events) {
+  const c = { all:0, ok:0, skip:0, fail:0 };
+  events.forEach(e => { if (isTrack(e)) { c.all++; c[e.kind]++; } });
+  return c;
+}
+
+/* Newest-first by default: while a job runs, the interesting row is the last
+   one, and putting it on top means the list never scrolls under the reader. */
+function trackTable(events, filter, sort) {
+  let rows = events.filter(isTrack);
+  if (filter !== 'all') rows = rows.filter(e => e.kind === filter);
+  rows = rows.map((e, i) => ({ ...e, i }));
+  const dir = sort.desc ? -1 : 1;
+  if (sort.by === 'status')
+    rows.sort((a, b) => (KIND_RANK[a.kind] - KIND_RANK[b.kind]) * dir || a.i - b.i);
+  else if (sort.by === 'track')
+    rows.sort((a, b) => String(a.text).localeCompare(String(b.text)) * dir);
+  else
+    rows.sort((a, b) => (a.i - b.i) * dir);
+
+  if (!rows.length)
+    return `<div class="empty">Nothing ${filter === 'all' ? 'yet' : 'in this filter'}.</div>`;
+
+  const arrow = k => sort.by === k ? (sort.desc ? ' ▾' : ' ▴') : '';
+  return `<div class="tl"><table>
+    <thead><tr>
+      <th data-sort="status" style="width:110px">Status${arrow('status')}</th>
+      <th data-sort="track">Track${arrow('track')}</th>
+      <th data-sort="order" style="width:90px">Order${arrow('order')}</th>
+    </tr></thead>
+    <tbody>${rows.map(e => `<tr>
+      <td><span class="st ${e.kind}">${KIND_NAME[e.kind] || e.kind}</span></td>
+      <td>${esc(e.text)}${e.detail ? `<div class="d">${esc(e.detail)}</div>` : ''}</td>
+      <td class="ver">${e.i + 1}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+/* ---------- now downloading ----------
+   Rebuilt in place rather than by replacing innerHTML every poll: the old code
+   re-rendered the whole panel and force-scrolled to the bottom each time, which
+   is why the scrollbar fought the reader while entries streamed in. */
+
+let curJob = null, curFilter = 'all', curSort = { by:'order', desc:true };
+
 function renderCurrent(j) {
+  const host = $('q-current');
   if (!j) {
-    $('q-current').innerHTML = '<div class="empty">Nothing running.</div>';
-    lastEvents = -1;
+    host.innerHTML = '<div class="empty">Nothing running.</div>';
+    $('q-failbox').innerHTML = '';
+    curJob = null;
     return;
   }
+  const fresh = !curJob || curJob !== j.id;
+  if (fresh) { curJob = j.id; curFilter = 'all'; curSort = { by:'order', desc:true }; }
+
+  const events = j.events || [];
+  const counts = countKinds(events);
   const pct = j.total ? (100 * j.done / j.total) : 0;
-  const log = (j.events || []).map(e => {
-    const kind = e.kind || 'info';
-    const d = e.detail ? `<div class="d">${esc(e.detail)}</div>` : '';
-    return `<div class="ev ${kind}"><span class="ic">${ICON[kind] || '·'}</span>`
-         + `<span class="body">${esc(e.text)}${d}</span></div>`;
-  }).join('');
-  $('q-current').innerHTML = `
+
+  // Keep the reader's scroll position across re-renders.
+  const prev = host.querySelector('.tl');
+  const keepTop = prev ? prev.scrollTop : 0;
+
+  host.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
       <b>${esc(j.name)}</b><span class="pill">${esc(j.format)}</span>
       <span class="spacer"></span>
@@ -520,15 +652,38 @@ function renderCurrent(j) {
       <span>${j.elapsed}s</span>
     </div>
     ${j.current ? `<div style="margin-top:9px">🎵 ${esc(j.current)}</div>` : ''}
-    <div class="log" id="cur-log">${log || '<div class="empty">Starting…</div>'}</div>`;
+    ${chipRow(counts, curFilter, 'cfilter')}
+    ${trackTable(events, curFilter, curSort)}`;
+
+  const now = host.querySelector('.tl');
+  if (now && !fresh) now.scrollTop = keepTop;
+
   const b = $('btn-cancel-cur');
   if (b) b.addEventListener('click', () => cancelJob(j.id));
-  const el = $('cur-log');
-  if (el && (j.events || []).length !== lastEvents) {
-    lastEvents = (j.events || []).length;
-    el.scrollTop = el.scrollHeight;
-  }
+  host.querySelectorAll('[data-cfilter]').forEach(el =>
+    el.addEventListener('click', () => {
+      curFilter = el.dataset.cfilter; renderCurrent(j);
+    }));
+  host.querySelectorAll('.tl th[data-sort]').forEach(el =>
+    el.addEventListener('click', () => {
+      const by = el.dataset.sort;
+      curSort = { by, desc: curSort.by === by ? !curSort.desc : true };
+      renderCurrent(j);
+    }));
+
+  // A dedicated failures box, so they are visible without hunting the log.
+  const fails = events.filter(e => e.kind === 'fail');
+  $('q-failbox').innerHTML = fails.length ? `<div class="failbox">
+      <h4>Failed (${fails.length})</h4>
+      ${fails.map(e => `<div class="ev fail"><span class="ic">✕</span>
+        <span class="body">${esc(e.text)}${
+          e.detail ? `<div class="d">${esc(e.detail)}</div>` : ''}</span></div>`).join('')}
+    </div>` : '';
 }
+
+/* ---------- waiting / recent ---------- */
+
+const openJobs = {};    // job id -> { events, filter, sort }
 
 function renderList(target, jobs, opts) {
   if (!jobs.length) {
@@ -538,14 +693,55 @@ function renderList(target, jobs, opts) {
   target.innerHTML = jobs.map((j, i) => {
     const right = opts.cancel
       ? `<button class="mini" data-cancel="${esc(j.id)}">Cancel</button>`
-      : `<span class="ver">${j.downloaded}✅ ${j.skipped}⏭️ ${j.failed}❌</span>`;
+      : `<button class="mini" data-open="${esc(j.id)}">${
+          openJobs[j.id] ? 'Hide tracks' : 'Tracks'}</button>`;
     const label = opts.cancel ? `#${i + 1}` : esc(j.state);
+    const fails = j.failed
+      ? `<span class="st fail">${j.failed} failed</span>` : '';
     return `<div class="qrow"><span class="pill">${label}</span>
       <span class="nm">${esc(j.name)}</span>
-      <span class="ver">${esc(j.format)}</span>${right}</div>`;
+      <span class="ver">${esc(j.format)}</span>
+      <span class="ver">${j.downloaded}✅ ${j.skipped}⏭️</span>${fails}${right}</div>
+      <div id="det-${esc(j.id)}"></div>`;
   }).join('');
   target.querySelectorAll('button[data-cancel]').forEach(b =>
     b.addEventListener('click', () => cancelJob(b.dataset.cancel)));
+  target.querySelectorAll('button[data-open]').forEach(b =>
+    b.addEventListener('click', () => toggleTracks(b.dataset.open)));
+  Object.keys(openJobs).forEach(id => paintDetail(id));
+}
+
+async function toggleTracks(id) {
+  if (openJobs[id]) { delete openJobs[id]; paintDetail(id); poll(); return; }
+  openJobs[id] = { events: null, filter: 'all', sort: { by:'status', desc:false } };
+  paintDetail(id);
+  try {
+    const r = await fetch('/api/job/' + encodeURIComponent(id));
+    const data = await r.json();
+    if (r.status === 401 && data.login) { location.href = '/login'; return; }
+    if (openJobs[id]) openJobs[id].events = (data.job || {}).events || [];
+  } catch (e) {
+    if (openJobs[id]) openJobs[id].events = [];
+  }
+  paintDetail(id);
+}
+
+function paintDetail(id) {
+  const host = $('det-' + id);
+  if (!host) return;
+  const st = openJobs[id];
+  if (!st) { host.innerHTML = ''; return; }
+  if (st.events === null) { host.innerHTML = '<div class="empty">Loading…</div>'; return; }
+  host.innerHTML = chipRow(countKinds(st.events), st.filter, 'rfilter')
+                 + trackTable(st.events, st.filter, st.sort);
+  host.querySelectorAll('[data-rfilter]').forEach(el =>
+    el.addEventListener('click', () => { st.filter = el.dataset.rfilter; paintDetail(id); }));
+  host.querySelectorAll('.tl th[data-sort]').forEach(el =>
+    el.addEventListener('click', () => {
+      const by = el.dataset.sort;
+      st.sort = { by, desc: st.sort.by === by ? !st.sort.desc : false };
+      paintDetail(id);
+    }));
 }
 
 /* ---------- update button ---------- */
@@ -567,8 +763,8 @@ async function refresh() {
   let d;
   try {
     const r = await fetch('/api/state');
-    if (r.status === 401) { location.href = '/login'; return false; }
     d = await r.json();
+    if (r.status === 401 && d.login) { location.href = '/login'; return false; }
   } catch (e) { return false; }
   $('signout').hidden = !d.auth_enabled;
 
@@ -588,9 +784,8 @@ async function refresh() {
   $('sp-setup').hidden = sp.configured;
   $('sp-connect').hidden = !sp.configured || sp.connected;
   $('sp-list').hidden = !sp.connected;
-  if (sp.connected && !spLoaded) loadSpotify();
-
-  $('outdir').textContent = 'Saving to ' + d.music_dir;
+  spConnected = !!sp.connected;
+  if (spConnected && !spLoaded) loadSpotify();
 
   // queue
   renderCurrent(d.current);
@@ -603,7 +798,7 @@ async function refresh() {
   $('qbadge').textContent = n;
   $('pill').textContent = d.current
     ? `downloading · ${d.current.done}/${d.current.total}`
-    : (waiting ? `${waiting} waiting` : 'idle');
+    : (waiting ? `${waiting} waiting` : 'active');
 
   return n > 0;   // something is running or queued
 }
@@ -637,6 +832,7 @@ document.addEventListener('visibilitychange', () => {
 
 loadSettings();
 renderOutput();
+applyView();
 showTab('spotify');
 poll();
 </script>

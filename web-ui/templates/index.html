@@ -197,7 +197,7 @@
       <h3>Connect Spotify</h3>
       <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">
         Read-only access to your playlists. Connect once from a browser on the
-        server; after that anyone can download without logging in.
+        server; after that anyone can use it without logging in.
       </p>
       <button class="btn sp" onclick="location.href='/api/spotify/login'">Connect to Spotify</button>
     </div>
@@ -235,8 +235,8 @@
             rel="noopener noreferrer"><b>exportify.app</b></a> and click
             <b>Get Started</b>.</li>
         <li>Log in with Spotify and allow read-only access to your playlists.</li>
-        <li>Find the playlist you want and click its <b>export</b> button — a
-            <code>.csv</code> file downloads.</li>
+        <li>Find the playlist you want and click its <b>export</b> button to
+            get a <code>.csv</code> file.</li>
         <li>Drop that file below.</li>
       </ol>
       <div class="drop" id="drop">
@@ -279,7 +279,7 @@
     <div class="panel">
       <h3>yt-dlp</h3>
       <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px">
-        YouTube changes often and yt-dlp is what keeps up. When downloads start
+        YouTube changes often and yt-dlp is what keeps up. When tracks start
         failing, update here — or just restart the container, which does the same
         on boot.
       </p>
@@ -295,7 +295,7 @@
   <!-- ============ QUEUE ============ -->
   <div class="view" id="view-queue">
     <div class="panel">
-      <h3>Now downloading</h3>
+      <h3>In progress</h3>
       <div id="q-current"><div class="empty">Nothing running.</div></div>
       <div id="q-failbox"></div>
     </div>
@@ -556,7 +556,7 @@ $('btn-clear').addEventListener('click', async () => {
    per-track events the server already records, so nothing new is stored. */
 
 const KINDS = ['ok', 'skip', 'fail'];
-const KIND_NAME = { ok:'Downloaded', skip:'Skipped', fail:'Failed',
+const KIND_NAME = { ok:'Saved', skip:'Skipped', fail:'Failed',
                     warn:'Warning', info:'Info', error:'Error' };
 const KIND_RANK = { fail:0, warn:1, ok:2, skip:3, info:4, error:0 };
 
@@ -568,7 +568,7 @@ function chipRow(counts, active, prefix) {
     + `data-${prefix}="${key}">${label}</button>`;
   return `<div class="chips">
     ${mk('all', 'All ' + counts.all)}
-    ${mk('ok', 'Downloaded ' + counts.ok)}
+    ${mk('ok', 'Saved ' + counts.ok)}
     ${mk('skip', 'Skipped ' + counts.skip)}
     ${mk('fail', 'Failed ' + counts.fail, 'fail-chip')}
   </div>`;
@@ -611,7 +611,7 @@ function trackTable(events, filter, sort) {
     </tr>`).join('')}</tbody></table></div>`;
 }
 
-/* ---------- now downloading ----------
+/* ---------- in progress ----------
    Rebuilt in place rather than by replacing innerHTML every poll: the old code
    re-rendered the whole panel and force-scrolled to the bottom each time, which
    is why the scrollbar fought the reader while entries streamed in. */
@@ -797,7 +797,7 @@ async function refresh() {
   $('qbadge').hidden = n === 0;
   $('qbadge').textContent = n;
   $('pill').textContent = d.current
-    ? `downloading · ${d.current.done}/${d.current.total}`
+    ? `working · ${d.current.done}/${d.current.total}`
     : (waiting ? `${waiting} waiting` : 'active');
 
   return n > 0;   // something is running or queued

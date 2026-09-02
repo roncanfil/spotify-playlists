@@ -36,15 +36,35 @@ MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music")
 # Every playlist is one folder under MUSIC_DIR holding its own CSV, its tracks
 # and its .m3u, so there is no separate playlist directory to configure.
 #
-# The one thing that has to outlive a container is the Spotify refresh token,
-# and it lives in a hidden folder inside MUSIC_DIR so that the music mount is
-# the only volume anyone has to set up. Dot-prefixed to stay out of the way of
-# file browsers and media scanners.
-#
-# yt-dlp's self-updates deliberately do NOT live here: the entrypoint
-# reinstalls them on every boot, so they belong in the container's own layer
-# (/data/ytdlp, where the image points PYTHONPATH) and need no volume.
-STATE_DIR = os.path.join(MUSIC_DIR, ".playlist-downloader")
+def _state_dir():
+    """
+    Where the Spotify refresh token lives: a hidden folder inside MUSIC_DIR, so
+    the music mount stays the only volume anyone has to set up. Dot-prefixed to
+    keep it out of file browsers and media scanners.
+
+    Renamed from .playlist-downloader in 1.9.0. An existing one is moved rather
+    than abandoned, so nobody has to reconnect Spotify. If the move fails we
+    keep using the old folder instead of starting fresh and silently losing the
+    token.
+
+    yt-dlp's self-updates deliberately do NOT live here: the entrypoint
+    reinstalls them on every boot, so they belong in the container's own layer
+    (/data/ytdlp, where the image points PYTHONPATH) and need no volume.
+    """
+    current = os.path.join(MUSIC_DIR, ".spotify-playlists")
+    legacy = os.path.join(MUSIC_DIR, ".playlist-downloader")
+    if not os.path.isdir(current) and os.path.isdir(legacy):
+        try:
+            os.rename(legacy, current)
+            print(f"[boot] moved {legacy} -> {current}", file=sys.stderr)
+        except OSError as e:
+            print(f"[warn] could not move {legacy} to {current} ({e}); "
+                  "still using the old folder", file=sys.stderr)
+            return legacy
+    return current
+
+
+STATE_DIR = _state_dir()
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
 PORT = os.environ.get("PORT", "8765")
@@ -317,7 +337,7 @@ class Job:
         elif kind == "summary":
             self._add(
                 "info",
-                f"Finished: {ev['downloaded']} downloaded, "
+                f"Finished: {ev['downloaded']} saved, "
                 f"{ev['skipped']} skipped, {ev['failed']} failed",
             )
 
@@ -437,8 +457,8 @@ def ytdlp_version():
 def list_playlists():
     """Playlist folders under MUSIC_DIR that contain their own <name>.csv.
 
-    Skips dot-prefixed names so our own .playlist-downloader state folder, and
-    anything else hidden, never shows up as a playlist.
+    Skips dot-prefixed names so our own state folder, and anything else
+    hidden, never shows up as a playlist.
     """
     try:
         entries = os.listdir(MUSIC_DIR)
@@ -713,7 +733,7 @@ def _callback_page(message, ok):
         "<body style=\"font:15px -apple-system,sans-serif;padding:40px;"
         'text-align:center">'
         f'<p style="color:{colour};font-size:17px">{message}</p>'
-        '<p><a href="/">Back to Playlist Downloader</a></p>'
+        '<p><a href="/">Back to Spotify Playlists</a></p>'
         "</body>"
     )
     return Response(body, 200 if ok else 400, {"Content-Type": "text/html"})

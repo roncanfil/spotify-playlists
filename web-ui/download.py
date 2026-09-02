@@ -885,7 +885,7 @@ DEPRECATION_BANNER = (
     "\u26a0\ufe0f  Running download.py directly is deprecated.",
     "   This file is the engine; the supported front end is the web UI:",
     "       docker compose up -d --build      (from this folder)",
-    "   The downloader is identical either way -- the UI adds browser access",
+    "   The engine is identical either way -- the UI adds browser access",
     "   for other people, one-job-at-a-time queuing, and automatic yt-dlp",
     "   updates. It does not change what YouTube serves.",
     "   History: ../cli/README.md",

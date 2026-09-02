@@ -53,7 +53,7 @@ The four things you may want to change are marked `EDIT 1`–`EDIT 4` in the fil
 
    **One volume, one decision.** Each playlist becomes a folder under it with
    its tracks, the `.csv` it came from and a generated `.m3u`. The Spotify
-   token goes in a hidden `.playlist-downloader/` folder there too, so
+   token goes in a hidden `.spotify-playlists/` folder there too, so
    connecting Spotify survives updates without a second volume. yt-dlp's
    self-updates are not persisted at all — they are reinstalled on every boot.
 
@@ -111,10 +111,10 @@ recreates the container.
 Two things changed names in 1.8.0, so the first update needs one extra step.
 
 The image moved to `ghcr.io/roncanfil/spotify-playlists` (the repository was
-renamed), and both the compose project and the app container are now
-`spotify-playlists`. A new project name means `docker compose up -d` tries to
-create fresh containers, and `bgutil-provider` kept its name — so the old
-project is still holding it and the new stack cannot start:
+renamed), and the compose project, the service and the app container are all
+`spotify-playlists` now. Renaming the project and the service makes
+`docker compose up -d` create fresh containers, while `bgutil-provider` kept its
+name — so the old project is still holding it and the new stack cannot start:
 
 ```
 Error response from daemon: Conflict. The container name "/bgutil-provider"
@@ -131,9 +131,15 @@ docker compose up -d
 ```
 
 `down` without `-v` is safe here: the only volume is your music bind mount, so
-nothing is deleted. Your Spotify token also survives — it lives in
-`.playlist-downloader/` inside the music folder, which is untouched by any of
-this.
+nothing is deleted. Your Spotify token survives too. It lives in a hidden
+folder inside the music folder, which nothing here touches — and if you are
+coming from before 1.9.0, the app renames that folder from
+`.playlist-downloader/` to `.spotify-playlists/` on first boot and carries the
+token across, so you will not have to reconnect. The boot log says so:
+
+```
+[boot] moved /music/.playlist-downloader -> /music/.spotify-playlists
+```
 
 ### Confirming which build is running
 

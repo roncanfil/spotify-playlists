@@ -77,7 +77,7 @@ silently disable them.
 
 ```
 music/
-├── .playlist-downloader/
+├── .spotify-playlists/
 │   └── spotify_token.json                so you connect Spotify only once
 └── Lenox Ave/
     ├── Lenox Ave.csv                     the playlist it came from
@@ -194,7 +194,7 @@ this replaced and why.
 
 ## 🔌 Services
 
-- **downloader** — the app. Runs under waitress, single process and
+- **spotify-playlists** — the app. Runs under waitress, single process and
   multi-threaded, because job state lives in memory.
 - **bgutil-provider** — generates proof-of-origin tokens, which clear YouTube's
   "confirm you're not a bot" checks that a server IP trips more often than a
@@ -261,7 +261,7 @@ This is normal — YouTube changes and yt-dlp catches up. The fix is a yt-dlp
 upgrade, not anything in this UI. Restart the container:
 
 ```bash
-docker compose restart downloader
+docker compose restart spotify-playlists
 ```
 
 That re-installs the latest yt-dlp. The **Update** button in the UI does the

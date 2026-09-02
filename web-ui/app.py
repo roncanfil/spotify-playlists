@@ -1,5 +1,5 @@
 """
-Web UI for the playlist downloader.
+Web UI for Spotify Playlists.
 
 Wraps download.process_playlist so the browser and the standalone script run
 identical logic. Playlists come either from an uploaded CSV or straight from

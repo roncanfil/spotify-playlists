@@ -4,7 +4,7 @@
 name: spotify-playlists
 
 services:
-  downloader:
+  spotify-playlists:
     image: ghcr.io/roncanfil/spotify-playlists:latest
     container_name: spotify-playlists
     restart: unless-stopped

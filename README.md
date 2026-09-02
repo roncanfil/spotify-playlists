@@ -31,7 +31,7 @@ volume paths.
 ### Any Linux box with docker compose
 
 ```bash
-mkdir -p ~/playlist-downloader && cd ~/playlist-downloader
+mkdir -p ~/spotify-playlists && cd ~/spotify-playlists
 curl -fsSLO https://raw.githubusercontent.com/roncanfil/spotify-playlists/main/web-ui/docker-compose.yml
 nano docker-compose.yml     # set the volume paths and a password
 docker compose up -d

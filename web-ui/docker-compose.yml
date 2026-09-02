@@ -6,7 +6,7 @@ name: spotify-playlists
 services:
   downloader:
     image: ghcr.io/roncanfil/spotify-playlists:latest
-    container_name: playlist-downloader
+    container_name: spotify-playlists
     restart: unless-stopped
     ports:
       # Host port on the left; the container is always 8765.

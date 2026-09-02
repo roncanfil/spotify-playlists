@@ -55,18 +55,18 @@ The four things you may want to change are marked `EDIT 1`–`EDIT 4` in the fil
    its tracks, the `.csv` it came from and a generated `.m3u`. The Spotify
    token goes in a hidden `.playlist-downloader/` folder there too, so
    connecting Spotify survives updates without a second volume. yt-dlp's
-   self-updates are not persisted at all — they are reinstalled on every boot. The defaults are relative, so they land next to the compose file
-   and the app is self-contained.
+   self-updates are not persisted at all — they are reinstalled on every boot.
 
-   Point the music mount at your actual library. Under CasaOS or ZimaOS use
-   absolute paths — `/DATA/Media/Music` and
-   `/DATA/AppData/playlist-downloader` — because CasaOS chooses the project
-   directory, so a relative path ends up somewhere you did not pick.
+   The default is relative, so it lands next to the compose file and the app is
+   self-contained. Point it at your actual library instead. Under CasaOS or
+   ZimaOS use an absolute path such as `/DATA/Media/Music`, because CasaOS
+   chooses the project directory and a relative path would end up somewhere you
+   did not pick.
 
 ## Any Linux box, Proxmox guest, or VPS
 
 ```bash
-mkdir -p ~/playlist-downloader && cd ~/playlist-downloader
+mkdir -p ~/spotify-playlists && cd ~/spotify-playlists
 curl -fsSLO https://raw.githubusercontent.com/roncanfil/spotify-playlists/main/web-ui/docker-compose.yml
 nano docker-compose.yml    # set the volume paths, and a password if exposed
 docker compose up -d
@@ -111,10 +111,10 @@ recreates the container.
 Two things changed names in 1.8.0, so the first update needs one extra step.
 
 The image moved to `ghcr.io/roncanfil/spotify-playlists` (the repository was
-renamed), and the compose project is now `spotify-playlists`. A new project name
-means `docker compose up -d` tries to create fresh containers, but the old
-project still holds the `playlist-downloader` and `bgutil-provider` names, so it
-fails:
+renamed), and both the compose project and the app container are now
+`spotify-playlists`. A new project name means `docker compose up -d` tries to
+create fresh containers, and `bgutil-provider` kept its name — so the old
+project is still holding it and the new stack cannot start:
 
 ```
 Error response from daemon: Conflict. The container name "/bgutil-provider"
@@ -156,7 +156,7 @@ to escape a page cached by an earlier build.
 If CasaOS installed it and you would rather work in a shell:
 
 ```bash
-cd "$(docker inspect playlist-downloader \
+cd "$(docker inspect spotify-playlists \
   --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}')"
 ```
 

@@ -131,6 +131,21 @@ def _authenticated():
     return bool(auth and _password_ok(auth.password))
 
 
+@app.after_request
+def _no_store(resp):
+    """
+    Stop browsers caching the HTML and the API.
+
+    All of this app's JavaScript is inline in index.html, so a cached page
+    keeps running the previous release's front end after an image update --
+    indistinguishable, from the user's side, from the update not working.
+    API responses are live state and must never be cached either.
+    """
+    if resp.mimetype in ("text/html", "application/json"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 def require_auth(view):
     """
     Optional gate; wide open when APP_PASSWORD is unset.

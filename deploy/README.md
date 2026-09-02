@@ -106,6 +106,35 @@ The same applies to editing settings: `docker compose restart` will *not* pick
 up a changed environment variable. `docker compose up -d` will, because it
 recreates the container.
 
+### Coming from a release before 1.8.0
+
+Two things changed names in 1.8.0, so the first update needs one extra step.
+
+The image moved to `ghcr.io/roncanfil/spotify-playlists` (the repository was
+renamed), and the compose project is now `spotify-playlists`. A new project name
+means `docker compose up -d` tries to create fresh containers, but the old
+project still holds the `playlist-downloader` and `bgutil-provider` names, so it
+fails:
+
+```
+Error response from daemon: Conflict. The container name "/bgutil-provider"
+is already in use by container "887ed59cbcb5..."
+```
+
+The old stack keeps running, which makes it look as though nothing happened.
+Take the old one down first:
+
+```bash
+docker compose down          # with the OLD compose file still in place
+# now replace the file with the new one, then
+docker compose up -d
+```
+
+`down` without `-v` is safe here: the only volume is your music bind mount, so
+nothing is deleted. Your Spotify token also survives — it lives in
+`.playlist-downloader/` inside the music folder, which is untouched by any of
+this.
+
 ### Confirming which build is running
 
 ```bash

@@ -1,7 +1,7 @@
-# Playlist Downloader — https://github.com/roncanfil/spotify-playlists
+# Spotify Playlists — https://github.com/roncanfil/spotify-playlists
 # Setup and troubleshooting: deploy/README.md
 
-name: playlist-downloader
+name: spotify-playlists
 
 services:
   downloader:

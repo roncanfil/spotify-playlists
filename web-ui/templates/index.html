@@ -2,477 +2,912 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
 <title>Spotify Playlists</title>
 <style>
+  /* ------------------------------------------------------------ tokens */
   :root {
-    --bg:#f6f6f4; --panel:#fff; --ink:#1a1a19; --muted:#6b6b66;
-    --line:#e2e2dd; --accent:#2f6f4f; --accent-ink:#fff;
-    --ok:#2f6f4f; --warn:#8a5a00; --fail:#a3302a; --skip:#6b6b66;
-    --spotify:#1db954; --radius:10px;
+    --bg:#f3f3f1; --surface:#ffffff; --surface-2:#f7f7f5; --surface-3:#ececea;
+    --ink:#161718; --ink-2:#4a4c51; --muted:#797c83; --faint:#a4a7ad;
+    --line:#e5e5e1; --line-2:#d3d4cf;
+    --accent:#168a46; --accent-hover:#127a3d; --accent-ink:#ffffff;
+    --accent-soft:rgba(22,138,70,.10); --accent-ring:rgba(22,138,70,.28);
+    --ok:#168a46; --ok-soft:rgba(22,138,70,.10);
+    --warn:#a86400; --warn-soft:rgba(190,120,0,.12);
+    --fail:#c33a31; --fail-soft:rgba(195,58,49,.10); --fail-ring:rgba(195,58,49,.3);
+    --skip:#6f727a; --skip-soft:rgba(111,114,122,.12);
+    --shadow-1:0 1px 2px rgba(20,20,20,.05), 0 1px 1px rgba(20,20,20,.03);
+    --shadow-2:0 2px 6px rgba(20,20,20,.06), 0 12px 32px -16px rgba(20,20,20,.16);
+    --shadow-pop:0 12px 40px -8px rgba(0,0,0,.28), 0 0 0 1px rgba(0,0,0,.05);
+    --r-lg:16px; --r-md:11px; --r-sm:8px;
+    --chrome:rgba(243,243,241,.82);
+    color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg:#16171a; --panel:#1e2024; --ink:#e9e9e6; --muted:#9a9a94;
-      --line:#2e3136; --accent:#4f9d76; --accent-ink:#10231a;
-      --ok:#6fbf95; --warn:#d9a340; --fail:#e0736c; --skip:#8a8a84;
+      --bg:#0e0f11; --surface:#17181b; --surface-2:#1d1e22; --surface-3:#25262b;
+      --ink:#ecedee; --ink-2:#b6b8bd; --muted:#868990; --faint:#5e6168;
+      --line:#26272b; --line-2:#34363b;
+      --accent:#2ecc6f; --accent-hover:#3fd97e; --accent-ink:#052a14;
+      --accent-soft:rgba(46,204,111,.13); --accent-ring:rgba(46,204,111,.32);
+      --ok:#43d37c; --ok-soft:rgba(67,211,124,.13);
+      --warn:#e2a93c; --warn-soft:rgba(226,169,60,.14);
+      --fail:#f0736b; --fail-soft:rgba(240,115,107,.13); --fail-ring:rgba(240,115,107,.35); --fail-ink:#2b0805;
+      --skip:#8d9098; --skip-soft:rgba(141,144,152,.14);
+      --shadow-1:0 1px 2px rgba(0,0,0,.4);
+      --shadow-2:0 2px 8px rgba(0,0,0,.35), 0 16px 40px -20px rgba(0,0,0,.6);
+      --shadow-pop:0 16px 48px -8px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06);
+      --chrome:rgba(14,15,17,.8);
+      color-scheme: dark;
     }
   }
-  .linkish { background:none; border:0; padding:0; cursor:pointer;
-    color:var(--muted); font:inherit; font-size:13px; text-decoration:underline; }
-  .linkish:hover { color:var(--ink); }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink);
-    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
-  .wrap { max-width:none; margin:0 auto; padding:22px 22px 64px; }
-  header { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
-  h1 { font-size:21px; margin:0; letter-spacing:-.01em; }
-  .spacer { flex:1; }
-  .ver { color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; }
-  .panel { background:var(--panel); border:1px solid var(--line);
-    border-radius:var(--radius); padding:18px; margin-bottom:16px; }
-  /* tabs */
-  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:18px; }
-  .tabs button { border:none; background:none; padding:9px 14px; font-size:14px;
-    font-weight:600; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; }
-  .tabs button.on { color:var(--ink); border-bottom-color:var(--accent); }
-  .tabs .badge { display:inline-block; min-width:18px; padding:0 5px; margin-left:6px;
-    border-radius:99px; background:var(--accent); color:var(--accent-ink);
-    font-size:11px; line-height:17px; text-align:center; }
-  .view { display:none; } .view.on { display:block; }
-  /* controls */
-  label.field { display:block; font-weight:600; font-size:13px; margin-bottom:7px; }
-  select, input[type=text] { width:100%; padding:9px 10px; border:1px solid var(--line);
-    border-radius:8px; background:var(--bg); color:var(--ink); font-size:14px; }
-  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; }
-  .row > div { flex:1; min-width:190px; }
-  .radios { display:flex; gap:8px; }
-  .radios label { flex:1; text-align:center; padding:9px; border:1px solid var(--line);
-    border-radius:8px; cursor:pointer; font-size:14px; user-select:none; }
-  .radios input { display:none; }
-  .radios label.on { border-color:var(--accent); background:var(--accent);
-    color:var(--accent-ink); font-weight:600; }
-  button.btn { padding:10px 18px; border-radius:8px; border:1px solid var(--line);
-    background:var(--panel); color:var(--ink); font-size:14px; font-weight:600; cursor:pointer; }
-  button.btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
-  button.btn.sp { background:var(--spotify); color:#08130c; border-color:var(--spotify); }
-  button.btn:disabled { opacity:.45; cursor:not-allowed; }
-  button.link { border:none; background:none; color:var(--muted); font-weight:500;
-    padding:4px 6px; text-decoration:underline; cursor:pointer; font-size:13px; }
-  button.mini { padding:5px 11px; font-size:12.5px; border-radius:7px; border:1px solid var(--line);
-    background:var(--panel); color:var(--ink); cursor:pointer; font-weight:600; }
-  .drop { border:1.5px dashed var(--line); border-radius:8px; padding:20px;
-    text-align:center; color:var(--muted); cursor:pointer; transition:.15s; }
-  .drop.hot { border-color:var(--accent); color:var(--ink); }
-  .note { font-size:13px; color:var(--muted); border-left:2px solid var(--line);
-    padding:8px 0 8px 11px; margin-top:12px; display:none; }
-  .note.show { display:block; } .note.warn { border-color:var(--warn); }
-  .note.ok { border-color:var(--ok); } .note b { color:var(--ink); }
-  .msg { font-size:13.5px; padding:9px 11px; border-radius:8px; margin-bottom:12px; display:none; }
-  .msg.show { display:block; }
-  .msg.err { background:color-mix(in srgb,var(--fail) 14%,transparent); color:var(--fail); }
-  .msg.good { background:color-mix(in srgb,var(--ok) 14%,transparent); color:var(--ok); }
-  /* segmented control */
-  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px;
-    overflow:hidden; flex:none; }
-  .seg button { background:var(--panel); border:0; padding:7px 11px; cursor:pointer;
-    font-size:12.5px; color:var(--muted); }
-  .seg button.on { background:var(--accent); color:var(--accent-ink); }
-  /* playlist grid — wider cards now the page is full width */
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:12px; }
-  /* list view: one row per playlist, so long names and detail are not clipped */
-  .grid.list { display:block; }
-  .grid.list .card { border-radius:0; border-left:0; border-right:0;
-    border-bottom:0; padding:9px 4px; }
+
+  /* ------------------------------------------------------------ base */
+  *, *::before, *::after { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink);
+    font:14.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter,
+      "Helvetica Neue", Arial, sans-serif;
+    font-feature-settings:"cv11","ss01"; -webkit-font-smoothing:antialiased;
+  }
+  button, input, select { font:inherit; color:inherit; }
+  button { cursor:pointer; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  [hidden] { display:none !important; }
+  .num { font-variant-numeric:tabular-nums; }
+  .muted { color:var(--muted); }
+  .spacer { flex:1 1 auto; }
+  .visually-hidden { position:absolute; width:1px; height:1px; overflow:hidden;
+    clip:rect(0 0 0 0); white-space:nowrap; }
+  svg.i { width:1em; height:1em; fill:none; stroke:currentColor; stroke-width:1.8;
+    stroke-linecap:round; stroke-linejoin:round; flex:none; vertical-align:-.15em; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+  code {
+    font:12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background:var(--surface-2); border:1px solid var(--line); border-radius:6px;
+    padding:1px 6px; word-break:break-all; color:var(--ink);
+  }
+
+  /* ------------------------------------------------------------ chrome */
+  .chrome {
+    position:sticky; top:0; z-index:20; background:var(--chrome);
+    -webkit-backdrop-filter:saturate(1.4) blur(14px); backdrop-filter:saturate(1.4) blur(14px);
+    border-bottom:1px solid var(--line);
+  }
+  .bar { display:flex; align-items:center; gap:12px; height:56px;
+    padding:0 max(16px, env(safe-area-inset-left)) 0 max(16px, env(safe-area-inset-right)); }
+  .brand { display:flex; align-items:center; gap:10px; min-width:0; }
+  .brand .mark {
+    width:30px; height:30px; border-radius:9px; display:grid; place-items:center; flex:none;
+    background:linear-gradient(140deg, #1ed760 0%, #14883f 100%); color:#03210f;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.18), var(--shadow-1);
+  }
+  .brand .mark svg { width:17px; height:17px; stroke-width:2.2; }
+  .brand h1 { margin:0; font-size:16px; font-weight:650; letter-spacing:-.012em;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  .status {
+    display:inline-flex; align-items:center; gap:7px; height:28px; padding:0 11px 0 9px;
+    border-radius:999px; border:1px solid var(--line); background:var(--surface);
+    font-size:12.5px; font-weight:560; color:var(--ink-2); white-space:nowrap;
+    box-shadow:var(--shadow-1);
+  }
+  .status .dot { width:7px; height:7px; border-radius:50%; background:var(--faint); flex:none; }
+  .status.working .dot { background:var(--accent); animation:pulse 1.6s ease-in-out infinite; }
+  .status.waiting .dot { background:var(--warn); }
+  @keyframes pulse { 0%,100% { box-shadow:0 0 0 0 var(--accent-ring); } 60% { box-shadow:0 0 0 5px transparent; } }
+
+  .tabs {
+    display:flex; align-items:stretch; gap:2px; padding:0 max(10px, env(safe-area-inset-left));
+    overflow-x:auto; scrollbar-width:none; -ms-overflow-style:none;
+  }
+  .tabs::-webkit-scrollbar { display:none; }
+  .tab {
+    position:relative; display:inline-flex; align-items:center; gap:7px; height:42px;
+    padding:0 12px; border:0; background:none; color:var(--muted); font-weight:560;
+    font-size:14px; white-space:nowrap; border-radius:8px 8px 0 0;
+    transition:color .15s;
+  }
+  .tab:hover { color:var(--ink); }
+  .tab[aria-selected=true] { color:var(--ink); }
+  .tab::after {
+    content:""; position:absolute; left:10px; right:10px; bottom:-1px; height:2px;
+    border-radius:2px 2px 0 0; background:var(--accent); opacity:0; transform:scaleX(.6);
+    transition:opacity .18s, transform .18s;
+  }
+  .tab[aria-selected=true]::after { opacity:1; transform:scaleX(1); }
+  .tab .count {
+    display:inline-grid; place-items:center; min-width:19px; height:19px; padding:0 6px;
+    border-radius:999px; background:var(--accent); color:var(--accent-ink);
+    font-size:11.5px; font-weight:650; line-height:1;
+  }
+  .tab.settings { margin-left:auto; }
+  .tab.settings svg { font-size:15px; }
+  @media (max-width: 520px) {
+    .brand h1 { font-size:15px; }
+    .status.working .w { display:none; }
+    #signout .btn .lbl { display:none; }
+    #signout .btn { width:34px; padding:0; }
+    #signout .btn svg { font-size:17px; }
+  }
+
+  /* ------------------------------------------------------------ layout */
+  main { padding:16px max(16px, env(safe-area-inset-left)) 72px; }
+  @media (min-width: 900px) { main { padding:24px 28px 88px; } .bar { padding:0 28px; } .tabs { padding:0 22px; } }
+  .view { display:none; animation:fade .18s ease-out; }
+  .view.on { display:block; }
+  @keyframes fade { from { opacity:0; transform:translateY(3px); } to { opacity:1; transform:none; } }
+  .measure { max-width:760px; }
+  .stack > * + * { margin-top:16px; }
+
+  .panel {
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg);
+    padding:18px; box-shadow:var(--shadow-1);
+  }
+  @media (min-width: 640px) { .panel { padding:22px; } }
+  .panel-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  .panel-head h2 { margin:0; font-size:15.5px; font-weight:650; letter-spacing:-.01em; }
+  .panel-head .sub { color:var(--muted); font-size:13px; }
+  .panel > h2 { margin:0 0 6px; font-size:15.5px; font-weight:650; letter-spacing:-.01em; }
+  .lede { margin:0 0 14px; color:var(--ink-2); font-size:14px; }
+  .fine { color:var(--muted); font-size:13px; margin:0; }
+  .fine b { color:var(--ink); font-weight:600; }
+
+  /* steps */
+  ol.steps { list-style:none; counter-reset:s; margin:0 0 16px; padding:0; display:grid; gap:10px; }
+  ol.steps li { position:relative; padding-left:36px; color:var(--ink-2); font-size:14px; counter-increment:s; }
+  ol.steps li::before {
+    content:counter(s); position:absolute; left:0; top:1px; width:24px; height:24px;
+    display:grid; place-items:center; border-radius:50%; font-size:12px; font-weight:650;
+    background:var(--accent-soft); color:var(--accent);
+  }
+  ol.steps li b { color:var(--ink); font-weight:600; }
+  ol.steps li .copyrow { display:flex; gap:8px; align-items:stretch; margin-top:8px; flex-wrap:wrap; }
+  ol.steps li .copyrow code { flex:1 1 220px; display:flex; align-items:center; padding:7px 10px; font-size:12.5px; }
+
+  /* callouts */
+  .callout {
+    display:flex; gap:10px; padding:12px 14px; border-radius:var(--r-md);
+    border:1px solid var(--line); background:var(--surface-2); color:var(--ink-2); font-size:13.5px;
+  }
+  .callout svg { font-size:16px; margin-top:2px; color:var(--muted); }
+  .callout.warn { background:var(--warn-soft); border-color:transparent; color:var(--ink); }
+  .callout.warn svg { color:var(--warn); }
+  .callout.fail { background:var(--fail-soft); border-color:transparent; color:var(--ink); }
+  .callout.fail svg { color:var(--fail); }
+  .callout.ok { background:var(--ok-soft); border-color:transparent; color:var(--ink); }
+  .callout.ok svg { color:var(--ok); }
+
+  /* startup warnings banner */
+  .warnbar {
+    display:flex; align-items:flex-start; gap:10px; padding:10px 14px; margin-bottom:14px;
+    border-radius:var(--r-md); background:var(--warn-soft); color:var(--ink); font-size:13.5px;
+    border:1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  }
+  .warnbar svg { color:var(--warn); font-size:17px; margin-top:2px; }
+  .warnbar ul { margin:0; padding-left:16px; }
+
+  /* message bar */
+  .msg {
+    display:none; align-items:flex-start; gap:10px; padding:10px 12px 10px 14px; margin-bottom:14px;
+    border-radius:var(--r-md); font-size:13.5px; line-height:1.45;
+    animation:fade .2s ease-out;
+  }
+  .msg.show { display:flex; }
+  .msg svg { font-size:17px; margin-top:1px; }
+  .msg .txt { flex:1; min-width:0; overflow-wrap:anywhere; }
+  .msg .x { border:0; background:none; padding:2px; margin:-2px -4px -2px 0; border-radius:6px;
+    color:inherit; opacity:.7; display:grid; place-items:center; }
+  .msg .x:hover { opacity:1; background:rgba(0,0,0,.06); }
+  .msg.good { background:var(--ok-soft); color:var(--ok); }
+  .msg.err  { background:var(--fail-soft); color:var(--fail); }
+  @media (prefers-color-scheme: dark) { .msg .x:hover { background:rgba(255,255,255,.08); } }
+
+  /* ------------------------------------------------------------ controls */
+  .btn {
+    display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    height:36px; padding:0 14px; border-radius:var(--r-sm);
+    border:1px solid var(--line-2); background:var(--surface); color:var(--ink);
+    font-size:13.5px; font-weight:580; white-space:nowrap; user-select:none;
+    box-shadow:var(--shadow-1); transition:background .12s, border-color .12s, transform .08s;
+  }
+  .btn:hover { background:var(--surface-2); border-color:var(--line-2); }
+  .btn:active { transform:translateY(1px); }
+  .btn:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .btn.primary:hover { background:var(--accent-hover); border-color:var(--accent-hover); }
+  .btn.spotify { background:#1ed760; border-color:#1ed760; color:#04210f; height:42px; padding:0 20px; font-size:14.5px; }
+  .btn.spotify:hover { background:#27e46a; border-color:#27e46a; }
+  .btn.ghost { background:transparent; border-color:transparent; box-shadow:none; color:var(--ink-2); }
+  .btn.ghost:hover { background:var(--surface-3); color:var(--ink); }
+  .btn.danger { color:var(--fail); }
+  .btn.danger:hover { background:var(--fail-soft); border-color:transparent; }
+  .btn.danger.solid { background:var(--fail); border-color:var(--fail); color:var(--fail-ink, #fff); }
+  .btn.danger.solid:hover { filter:brightness(1.05); }
+  .btn.sm { height:30px; padding:0 11px; font-size:12.5px; border-radius:7px; }
+  .btn.lg { height:44px; padding:0 22px; font-size:15px; border-radius:10px; }
+  .btn .spin { display:none; }
+  .btn.busy .spin { display:inline-block; }
+  .spin { width:14px; height:14px; border-radius:50%; border:2px solid currentColor; border-right-color:transparent;
+    animation:rot .7s linear infinite; }
+  @keyframes rot { to { transform:rotate(360deg); } }
+
+  .field { position:relative; display:flex; align-items:center; }
+  .field > svg { position:absolute; left:11px; color:var(--muted); font-size:16px; pointer-events:none; }
+  .field input {
+    width:100%; height:38px; padding:0 12px 0 34px; border-radius:var(--r-sm);
+    border:1px solid var(--line-2); background:var(--surface); color:var(--ink); font-size:14px;
+    transition:border-color .12s, box-shadow .12s;
+  }
+  .field input::placeholder { color:var(--faint); }
+  .field input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
+
+  .seg { display:inline-flex; padding:3px; gap:2px; border-radius:var(--r-sm); background:var(--surface-3); flex:none; }
+  .seg button {
+    display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 10px; border:0; border-radius:6px;
+    background:transparent; color:var(--muted); font-size:13px; font-weight:560; transition:all .12s;
+  }
+  .seg button svg { font-size:15px; }
+  .seg button:hover { color:var(--ink); }
+  .seg button[aria-pressed=true] { background:var(--surface); color:var(--ink); box-shadow:var(--shadow-1); }
+  .seg button .lbl { display:none; }
+  @media (min-width: 480px) { .seg button .lbl { display:inline; } }
+
+  .pill {
+    display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 8px; border-radius:999px;
+    font-size:11.5px; font-weight:580; white-space:nowrap; color:var(--ink-2);
+    background:var(--surface-3);
+  }
+  .pill.outline { background:transparent; border:1px solid var(--line-2); }
+  .pill.ok { background:var(--ok-soft); color:var(--ok); }
+  .pill.fail { background:var(--fail-soft); color:var(--fail); }
+  .pill.warn { background:var(--warn-soft); color:var(--warn); }
+  .pill.skip { background:var(--skip-soft); color:var(--skip); }
+
+  /* ------------------------------------------------------------ spotify */
+  .toolbar { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+  .toolbar .tools { display:flex; gap:2px; flex:none; margin-left:auto; }
+  .account { display:flex; align-items:center; gap:10px; min-width:0; flex:1 1 auto; }
+  .account .avatar {
+    width:32px; height:32px; border-radius:50%; background:var(--surface-3); object-fit:cover; flex:none;
+    display:grid; place-items:center; color:var(--muted); overflow:hidden;
+  }
+  .account .avatar svg { font-size:16px; }
+  .account .who { min-width:0; }
+  .account .who b { display:block; font-size:14.5px; font-weight:650; letter-spacing:-.01em;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .account .who span { display:block; font-size:12.5px; color:var(--muted); }
+  .filters { display:flex; gap:10px; align-items:center; margin-bottom:14px; }
+  .filters .field { flex:1; min-width:0; }
+
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:12px; }
+  @media (max-width: 420px) { .grid { grid-template-columns:1fr; } }
+  .card {
+    display:flex; align-items:center; gap:12px; padding:12px; min-width:0;
+    border:1px solid var(--line); border-radius:var(--r-md); background:var(--surface-2);
+    transition:border-color .15s, box-shadow .15s, transform .15s;
+  }
+  .card:hover { border-color:var(--line-2); box-shadow:var(--shadow-2); }
+  .card .art {
+    width:56px; height:56px; border-radius:8px; object-fit:cover; flex:none;
+    background:var(--surface-3); box-shadow:inset 0 0 0 1px rgba(0,0,0,.05);
+  }
+  .card .art.ph { display:grid; place-items:center; color:var(--faint); }
+  .card .art.ph svg { font-size:22px; }
+  .card .meta { flex:1; min-width:0; }
+  .card .nm { display:flex; align-items:center; gap:6px; font-weight:600; font-size:14px; letter-spacing:-.005em; line-height:1.3; min-width:0; }
+  .card .nm .t { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .card .sub { display:flex; align-items:center; gap:6px; margin-top:3px;
+    color:var(--muted); font-size:12.5px; white-space:nowrap; overflow:hidden; }
+  .card .sub .owner { overflow:hidden; text-overflow:ellipsis; }
+  .card .tag { flex:none; height:17px; padding:0 5px; border-radius:4px; font-size:10px; font-weight:620;
+    letter-spacing:.03em; text-transform:uppercase; background:var(--surface-3); color:var(--muted);
+    display:inline-flex; align-items:center; }
+  .card .btn { flex:none; }
+  /* list layout */
+  .grid.list { display:block; border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; background:var(--surface); }
+  .grid.list .card { border:0; border-radius:0; background:transparent; border-top:1px solid var(--line); padding:10px 12px; }
   .grid.list .card:first-child { border-top:0; }
-  .grid.list .card .nm, .grid.list .card .sub { white-space:normal; }
-  .grid.list .card img, .grid.list .card .ph { width:40px; height:40px; }
-  .card { display:flex; gap:11px; padding:11px; border:1px solid var(--line);
-    border-radius:9px; background:var(--bg); align-items:center; }
-  .card img, .card .ph { width:56px; height:56px; border-radius:6px; object-fit:cover; flex:none;
-    background:var(--line); display:flex; align-items:center; justify-content:center;
-    font-size:20px; color:var(--muted); }
-  a { color:var(--accent); }
-  .card .meta { min-width:0; flex:1; }
-  .card .nm { font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden;
-    text-overflow:ellipsis; }
-  .card .sub { color:var(--muted); font-size:12.5px; white-space:nowrap; overflow:hidden;
-    text-overflow:ellipsis; }
-  .tag { font-size:10.5px; padding:1px 6px; border-radius:99px; border:1px solid var(--line);
-    color:var(--muted); margin-left:5px; }
-  /* progress */
-  .bar { height:8px; background:var(--line); border-radius:99px; overflow:hidden; margin:6px 0 10px; }
-  .bar > i { display:block; height:100%; background:var(--accent); width:0; transition:width .3s; }
-  .stats { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--muted);
-    font-variant-numeric:tabular-nums; }
-  .stats b { color:var(--ink); }
-  .log { margin-top:6px; max-height:38vh; overflow-y:auto; border-top:1px solid var(--line); }
-  /* track lists: fixed height so streaming entries cannot make the page jump */
-  .chips { display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 2px; }
-  .chip { font-size:12px; padding:3px 9px; border-radius:99px; cursor:pointer;
-    border:1px solid var(--line); background:var(--panel); color:var(--muted); }
-  .chip.on { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
-  .chip.fail-chip { color:var(--fail); border-color:var(--fail); }
-  .chip.fail-chip.on { background:var(--fail); border-color:var(--fail); color:#fff; }
-  .tl { max-height:44vh; overflow-y:auto; border-top:1px solid var(--line); }
-  .tl table { width:100%; border-collapse:collapse; font-size:13px; }
-  .tl th { position:sticky; top:0; background:var(--panel); text-align:left;
-    font-weight:600; font-size:12px; color:var(--muted); padding:6px 8px;
-    border-bottom:1px solid var(--line); cursor:pointer; white-space:nowrap; }
-  .tl td { padding:5px 8px; border-bottom:1px solid var(--line);
-    vertical-align:top; word-break:break-word; }
-  .tl tr:hover td { background:var(--bg); }
-  .st { font-size:11px; padding:1px 7px; border-radius:99px; white-space:nowrap;
-    border:1px solid var(--line); color:var(--muted); }
-  .st.ok { color:var(--ok); border-color:var(--ok); }
-  .st.fail { color:var(--fail); border-color:var(--fail); }
-  .st.skip { color:var(--skip); }
-  .st.warn { color:var(--warn); border-color:var(--warn); }
-  .pinbtn { font-size:12px; color:var(--muted); }
-  .failbox { margin-top:12px; border:1px solid var(--fail); border-radius:9px;
-    padding:10px 12px; }
-  .failbox h4 { margin:0 0 6px; font-size:13px; color:var(--fail); }
-  .ev { display:flex; gap:9px; padding:7px 2px; border-bottom:1px solid var(--line);
-    font-size:13.5px; align-items:flex-start; }
-  .ev .ic { width:15px; flex:none; text-align:center; }
-  .ev .body { min-width:0; flex:1; }
-  .ev .body .d { color:var(--muted); font-size:12.5px; word-break:break-word; }
-  .ev.ok .ic{color:var(--ok)} .ev.fail .ic{color:var(--fail)}
-  .ev.warn .ic{color:var(--warn)} .ev.skip .ic,.ev.info .ic{color:var(--skip)}
-  .ev.skip .body{color:var(--muted)}
-  .qrow { display:flex; gap:10px; align-items:center; padding:9px 2px;
-    border-bottom:1px solid var(--line); font-size:13.5px; }
-  .qrow .nm { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .empty { color:var(--muted); font-size:13.5px; padding:16px 2px; }
-  .pill { font-size:11.5px; padding:2px 7px; border-radius:99px; border:1px solid var(--line);
-    color:var(--muted); }
-  code { background:var(--bg); border:1px solid var(--line); border-radius:5px;
-    padding:1px 5px; font-size:12.5px; word-break:break-all; }
-  h3 { font-size:14px; margin:18px 0 8px; }
-  h3:first-child { margin-top:0; }
+  .grid.list .card:hover { box-shadow:none; background:var(--surface-2); }
+  .grid.list .card .art { width:44px; height:44px; border-radius:6px; }
+  .grid.list .card .nm { flex-wrap:wrap; }
+  .grid.list .card .nm .t, .grid.list .card .sub { white-space:normal; }
+  .empty { color:var(--muted); font-size:13.5px; padding:22px 4px; text-align:center; }
+  .empty.left { text-align:left; padding:14px 2px; }
+  .skeleton { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:12px; }
+  .skeleton div { height:80px; border-radius:var(--r-md); background:linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
+    background-size:200% 100%; animation:shimmer 1.4s linear infinite; }
+  @keyframes shimmer { to { background-position:-200% 0; } }
+
+  /* ------------------------------------------------------------ csv */
+  .drop {
+    position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+    min-height:150px; padding:22px; text-align:center; border-radius:var(--r-md); cursor:pointer;
+    border:1.5px dashed var(--line-2); background:var(--surface-2); color:var(--muted);
+    transition:border-color .15s, background .15s, color .15s;
+  }
+  .drop:hover { border-color:var(--faint); color:var(--ink-2); }
+  .drop.hot { border-color:var(--accent); background:var(--accent-soft); color:var(--ink); }
+  .drop.has { border-style:solid; border-color:var(--accent); color:var(--ink); }
+  .drop .ico { width:42px; height:42px; border-radius:12px; display:grid; place-items:center;
+    background:var(--surface); box-shadow:var(--shadow-1); color:var(--ink-2); font-size:20px; }
+  .drop.has .ico { color:var(--accent); }
+  .drop .t { font-size:14px; font-weight:560; color:var(--ink-2); overflow-wrap:anywhere; }
+  .drop.has .t { color:var(--ink); }
+  .drop .s { font-size:12.5px; color:var(--muted); }
+  .drop.has .s { color:var(--accent); }
+  .actions { display:flex; flex-direction:column; align-items:center; gap:8px; margin-top:20px; }
+  .hint { font-size:12.5px; color:var(--muted); }
+
+  /* ------------------------------------------------------------ queue */
+  .job-head { display:flex; align-items:flex-start; gap:12px; }
+  .job-head .title { flex:1; min-width:0; }
+  .job-head .title h3 { margin:0; font-size:16px; font-weight:650; letter-spacing:-.012em; overflow-wrap:anywhere; }
+  .job-head .title .fmt { margin-top:5px; }
+  .progress { display:flex; align-items:center; gap:12px; margin:14px 0 12px; }
+  .progress .track { flex:1; height:8px; border-radius:999px; background:var(--surface-3); overflow:hidden; }
+  .progress .track i { display:block; height:100%; width:0; border-radius:999px;
+    background:linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #1ed760)); transition:width .4s ease; }
+  .progress .pct { font-size:13px; font-weight:620; min-width:38px; text-align:right; }
+  .stats { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:8px; }
+  @media (max-width: 560px) {
+    .stats { grid-template-columns:repeat(6, minmax(0, 1fr)); }
+    .stats .stat { grid-column:span 2; }
+    .stats .stat:nth-child(n+4) { grid-column:span 3; }
+  }
+  .stat { padding:9px 11px; border-radius:var(--r-sm); background:var(--surface-2); border:1px solid var(--line); min-width:0; }
+  .stat .k { display:block; font-size:11.5px; color:var(--muted); font-weight:560; text-transform:uppercase; letter-spacing:.04em; }
+  .stat .v { display:block; margin-top:1px; font-size:17px; font-weight:650; letter-spacing:-.01em; line-height:1.2; }
+  .stat .v small { font-size:12.5px; color:var(--muted); font-weight:560; }
+  .stat.ok .v { color:var(--ok); } .stat.fail .v { color:var(--fail); } .stat.skip .v { color:var(--skip); }
+  .stat.fail.zero .v, .stat.skip.zero .v, .stat.ok.zero .v { color:var(--ink); }
+  .now { display:flex; align-items:center; gap:10px; margin-top:12px; padding:9px 12px; border-radius:var(--r-sm);
+    background:var(--accent-soft); font-size:13.5px; min-width:0; }
+  .now .eq { display:inline-flex; align-items:flex-end; gap:2px; height:14px; flex:none; }
+  .now .eq i { width:3px; background:var(--accent); border-radius:1px; animation:eq 1s ease-in-out infinite; }
+  .now .eq i:nth-child(1) { height:60%; animation-delay:-.3s; } .now .eq i:nth-child(2) { height:100%; }
+  .now .eq i:nth-child(3) { height:40%; animation-delay:-.6s; }
+  @keyframes eq { 0%,100% { transform:scaleY(.5); } 50% { transform:scaleY(1); } }
+  .now .lbl { color:var(--muted); flex:none; }
+  .now .tk { font-weight:580; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin:16px 0 8px; }
+  @media (max-width: 520px) {
+    .chips { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; margin-left:-4px; padding:2px 4px; }
+    .chips::-webkit-scrollbar { display:none; }
+    .chip { flex:none; }
+  }
+  .chip {
+    display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 10px; border-radius:999px;
+    border:1px solid var(--line-2); background:var(--surface); color:var(--ink-2); font-size:12.5px; font-weight:560;
+    transition:all .12s;
+  }
+  .chip .n { font-variant-numeric:tabular-nums; color:var(--muted); }
+  .chip:hover { background:var(--surface-2); }
+  .chip[aria-pressed=true] { background:var(--ink); border-color:var(--ink); color:var(--bg); }
+  .chip[aria-pressed=true] .n { color:inherit; opacity:.75; }
+  .chip.fail { color:var(--fail); border-color:color-mix(in srgb, var(--fail) 45%, transparent); }
+  .chip.fail .n { color:inherit; opacity:.8; }
+  .chip.fail[aria-pressed=true] { background:var(--fail); border-color:var(--fail); color:#fff; }
+  .chip.zero { opacity:.55; }
+
+  .tl { border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; background:var(--surface); }
+  .tl .scroll { max-height:min(420px, 52vh); overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+  .tl table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; table-layout:fixed; }
+  .tl th {
+    position:sticky; top:0; z-index:1; background:var(--surface-2); text-align:left; font-size:11.5px;
+    font-weight:620; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    padding:0; border-bottom:1px solid var(--line); white-space:nowrap;
+  }
+  .tl th button { display:flex; align-items:center; gap:5px; width:100%; height:34px; padding:0 12px; border:0;
+    background:none; color:inherit; font:inherit; text-align:left; text-transform:inherit; letter-spacing:inherit; }
+  .tl th button:hover { color:var(--ink); }
+  .tl th[aria-sort] button { color:var(--ink); }
+  .tl th .arr { font-size:12px; opacity:0; transition:opacity .12s; }
+  .tl th[aria-sort] .arr { opacity:1; }
+  .tl th[aria-sort=ascending] .arr { transform:rotate(180deg); }
+  .tl td { padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:top; overflow-wrap:anywhere; }
+  .tl tr:last-child td { border-bottom:0; }
+  .tl tbody tr:hover td { background:var(--surface-2); }
+  .tl .c-status { width:104px; } .tl .c-order { width:64px; text-align:right; }
+  .tl td.c-order { color:var(--muted); font-variant-numeric:tabular-nums; text-align:right; }
+  @media (max-width: 480px) { .tl .c-status { width:92px; } .tl .c-order { width:50px; } .tl td { padding:8px 10px; } .tl th button { padding:0 10px; } }
+  .tl .err { color:var(--fail); font-size:12.5px; margin-top:2px; }
+  .tl .det { color:var(--muted); font-size:12px; margin-top:2px; }
+  .tl .empty { padding:26px 12px; }
+  .st { display:inline-flex; align-items:center; gap:6px; font-weight:580; font-size:12.5px; white-space:nowrap; }
+  .st::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; flex:none; }
+  .st.ok { color:var(--ok); } .st.fail { color:var(--fail); } .st.skip { color:var(--skip); }
+
+  .failbox { margin-top:14px; border-radius:var(--r-md); border:1px solid color-mix(in srgb, var(--fail) 40%, transparent);
+    background:var(--fail-soft); overflow:hidden; }
+  .failbox summary { list-style:none; display:flex; align-items:center; gap:8px; padding:10px 14px; cursor:pointer;
+    color:var(--fail); font-weight:650; font-size:13.5px; user-select:none; }
+  .failbox summary::-webkit-details-marker { display:none; }
+  .failbox summary svg { font-size:16px; }
+  .failbox summary .chev { margin-left:auto; transition:transform .15s; color:var(--fail); opacity:.7; }
+  .failbox[open] summary .chev { transform:rotate(180deg); }
+  .failbox ul { list-style:none; margin:0; padding:0 14px 6px; }
+  .failbox li { padding:8px 0; border-top:1px solid color-mix(in srgb, var(--fail) 18%, transparent); font-size:13.5px; }
+  .failbox li b { font-weight:600; overflow-wrap:anywhere; }
+  .failbox li div { color:var(--fail); font-size:12.5px; margin-top:2px; overflow-wrap:anywhere; }
+
+  .rows { display:flex; flex-direction:column; }
+  .row { display:grid; grid-template-columns:28px minmax(0, 1fr) auto; grid-template-areas:"ic nm act" "ic sub sub";
+    column-gap:12px; row-gap:3px; align-items:center; padding:11px 2px; border-top:1px solid var(--line); }
+  .row:first-child { border-top:0; }
+  .row .pos, .row .state { grid-area:ic; align-self:start; margin-top:1px; width:28px; height:28px; border-radius:8px; display:grid; place-items:center; }
+  .row .pos { background:var(--surface-3); color:var(--ink-2); font-size:12.5px; font-weight:650; font-variant-numeric:tabular-nums; }
+  .row .state { font-size:15px; }
+  .row .state.done { background:var(--ok-soft); color:var(--ok); }
+  .row .state.cancelled { background:var(--skip-soft); color:var(--skip); }
+  .row .state.error { background:var(--fail-soft); color:var(--fail); }
+  .row .nm { grid-area:nm; font-weight:600; font-size:14px; line-height:1.4; overflow-wrap:anywhere; align-self:center; }
+  .row .act { grid-area:act; }
+  .row .sub { grid-area:sub; display:flex; align-items:center; gap:4px 12px; flex-wrap:wrap; color:var(--muted); font-size:12.5px; }
+  .row .sub .fmt { color:var(--ink-2); }
+  .row .sub .ok { color:var(--ok); } .row .sub .skip { color:var(--skip); }
+  .row .sub .pill { height:20px; }
+  .detail { padding:0 0 10px; }
+  .detail .chips { margin-top:6px; }
+  .detail .loading { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px; padding:10px 2px; }
+
+  /* ------------------------------------------------------------ settings */
+  .label { font-size:12.5px; font-weight:620; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 8px; }
+  .opts { display:grid; gap:8px; }
+  .opts.two { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  .opts.three { grid-template-columns:repeat(3, minmax(0,1fr)); }
+  @media (max-width: 420px) { .opts.two { grid-template-columns:1fr; } }
+  .opt {
+    position:relative; display:flex; gap:10px; padding:12px 13px; border-radius:var(--r-md); cursor:pointer;
+    border:1px solid var(--line-2); background:var(--surface); transition:border-color .12s, background .12s, box-shadow .12s;
+  }
+  .opt input { position:absolute; opacity:0; pointer-events:none; }
+  .opt .radio { width:16px; height:16px; margin-top:2px; border-radius:50%; border:1.5px solid var(--line-2); flex:none;
+    display:grid; place-items:center; transition:all .12s; }
+  .opt .radio::after { content:""; width:7px; height:7px; border-radius:50%; background:var(--accent-ink); transform:scale(0); transition:transform .12s; }
+  .opt .txt { min-width:0; }
+  .opt .txt b { display:block; font-size:14px; font-weight:620; }
+  .opt .txt span { display:block; font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.4; }
+  .opt:hover { border-color:var(--faint); }
+  .opt.on { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); background:var(--surface); }
+  .opt.on .radio { border-color:var(--accent); background:var(--accent); }
+  .opt.on .radio::after { transform:scale(1); }
+  .opt:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:2px; }
+  .group { margin-top:20px; transition:opacity .2s; }
+  .group.off { opacity:.45; pointer-events:none; }
+  .group.off .opt.on { border-color:var(--line-2); box-shadow:none; }
+  .group.off .opt.on .radio { border-color:var(--line-2); background:transparent; }
+  .group.off .opt.on .radio::after { transform:scale(0); }
+  .note { margin-top:10px; font-size:13px; color:var(--ink-2); display:flex; gap:8px; align-items:flex-start; }
+  .note svg { font-size:15px; margin-top:2px; color:var(--muted); }
+  .note.warn svg { color:var(--warn); } .note.ok svg { color:var(--ok); }
+  .note b { color:var(--ink); font-weight:620; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:6px 18px; font-size:13.5px; margin:0 0 16px; }
+  .kv dt { color:var(--muted); margin:0; } .kv dd { margin:0; font-weight:580; font-variant-numeric:tabular-nums; }
+
+  /* ------------------------------------------------------------ dialog */
+  dialog.confirm {
+    border:0; padding:0; border-radius:var(--r-lg); background:var(--surface); color:var(--ink);
+    box-shadow:var(--shadow-pop); width:min(400px, calc(100vw - 32px)); margin:auto;
+  }
+  dialog.confirm::backdrop { background:rgba(0,0,0,.42); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); }
+  dialog.confirm form { padding:22px 22px 18px; }
+  dialog.confirm h3 { margin:0 0 6px; font-size:16px; font-weight:650; letter-spacing:-.01em; }
+  dialog.confirm p { margin:0 0 18px; color:var(--ink-2); font-size:14px; overflow-wrap:anywhere; }
+  dialog.confirm .acts { display:flex; justify-content:flex-end; gap:8px; }
+  @media (max-width: 480px) { dialog.confirm .acts { flex-direction:column-reverse; } dialog.confirm .acts .btn { width:100%; height:42px; } }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>Spotify Playlists</h1>
-    <span class="pill" id="pill">idle</span>
-    <form method="post" action="/logout" id="signout" hidden
-          style="margin-left:auto">
-      <button type="submit" class="linkish">Sign out</button>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01" stroke-width="2.6"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-skip" viewBox="0 0 24 24"><path d="M5 5v14l10-7z"/><path d="M19 5v14"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19z"/><path d="M12 9v5m0 3v.01" stroke-width="2.2"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8v.01" stroke-width="2.2"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-sort" viewBox="0 0 24 24"><path d="M12 5v14m0-14-5 5m5-5 5 5"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5M15 12H3"/><path d="M13 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/></symbol>
+  </defs>
+</svg>
+
+<div class="chrome">
+  <div class="bar">
+    <div class="brand">
+      <span class="mark"><svg class="i"><use href="#i-note"/></svg></span>
+      <h1>Spotify Playlists</h1>
+    </div>
+    <span class="status" id="status"><span class="dot"></span><span class="w" id="status-word">Ready</span><span class="num" id="status-num"></span></span>
+    <span class="spacer"></span>
+    <form method="post" action="/logout" id="signout" hidden>
+      <button type="submit" class="btn ghost sm" title="Sign out" aria-label="Sign out"><svg class="i"><use href="#i-logout"/></svg><span class="lbl">Sign out</span></button>
     </form>
-  </header>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" role="tab" data-tab="spotify" aria-selected="true" aria-controls="view-spotify">Spotify</button>
+    <button class="tab" role="tab" data-tab="csv" aria-selected="false" aria-controls="view-csv">CSV file</button>
+    <button class="tab" role="tab" data-tab="queue" aria-selected="false" aria-controls="view-queue">Queue<span class="count" id="qbadge" hidden>0</span></button>
+    <button class="tab settings" role="tab" data-tab="settings" aria-selected="false" aria-controls="view-settings"><svg class="i"><use href="#i-gear"/></svg>Settings</button>
+  </nav>
+</div>
 
-  <div class="msg" id="msg"></div>
-
-  <div class="tabs">
-    <button data-tab="spotify" class="on">Spotify</button>
-    <button data-tab="csv">CSV file</button>
-    <button data-tab="queue">Queue<span class="badge" id="qbadge" hidden>0</span></button>
-    <button data-tab="settings" style="margin-left:auto">Settings</button>
+<main>
+  <div class="warnbar" id="warnbar" hidden>
+    <svg class="i"><use href="#i-warn"/></svg>
+    <div><b>Storage problem.</b> Some paths are not writable, so jobs may fail.<ul id="warnlist"></ul></div>
   </div>
 
-  <!-- ============ SPOTIFY ============ -->
-  <div class="view on" id="view-spotify">
-    <div class="panel" id="sp-setup" hidden>
-      <h3>Connect Spotify</h3>
-      <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px">
-        This needs a Spotify app of your own — free, takes a minute.
-      </p>
-      <ol style="font-size:13.5px;color:var(--muted);padding-left:20px;margin:0 0 12px">
+  <div class="msg" id="msg" role="status" aria-live="polite">
+    <svg class="i" id="msg-icon"><use href="#i-check"/></svg>
+    <span class="txt" id="msg-text"></span>
+    <button class="x" id="msg-close" aria-label="Dismiss"><svg class="i"><use href="#i-x"/></svg></button>
+  </div>
+
+  <!-- ============================================================ SPOTIFY -->
+  <section class="view on" id="view-spotify" role="tabpanel">
+    <div class="panel measure" id="sp-setup" hidden>
+      <h2>Connect Spotify</h2>
+      <p class="lede">This needs a Spotify app of your own. It is free and takes about a minute.</p>
+      <ol class="steps">
         <li>Open <b>developer.spotify.com/dashboard</b> and click <b>Create app</b>.</li>
-        <li>Add this exact <b>Redirect URI</b>:<br><code id="sp-redirect">…</code></li>
+        <li>Add this exact <b>Redirect URI</b>:
+          <div class="copyrow">
+            <code id="sp-redirect">…</code>
+            <button class="btn sm" id="sp-copy" type="button"><svg class="i"><use href="#i-copy"/></svg>Copy</button>
+          </div>
+        </li>
         <li>Tick <b>Web API</b>, save, then copy the <b>Client ID</b>.</li>
-        <li>Put it in <code>.env</code> as <code>SPOTIFY_CLIENT_ID=…</code> and restart.</li>
+        <li>Put it in the compose file as <code>SPOTIFY_CLIENT_ID</code> and restart.</li>
       </ol>
-      <p style="font-size:13px;color:var(--muted);margin:0">
-        Spotify refuses <code>localhost</code> and requires HTTPS for anything that
-        isn't a loopback address, so the redirect must be <code>127.0.0.1</code> and
-        you must connect from a browser <b>on the server itself</b>. Once connected,
-        the token is stored server-side and everyone else can just use it.
-      </p>
-    </div>
-
-    <div class="panel" id="sp-connect" hidden>
-      <h3>Connect Spotify</h3>
-      <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">
-        Read-only access to your playlists. Connect once from a browser on the
-        server; after that anyone can use it without logging in.
-      </p>
-      <button class="btn sp" onclick="location.href='/api/spotify/login'">Connect to Spotify</button>
-    </div>
-
-    <div class="panel" id="sp-list" hidden>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-        <b id="sp-user" style="font-size:14px"></b>
-        <span class="spacer"></span>
-        <button class="link" id="sp-reload">Reload</button>
-        <button class="link" id="sp-disconnect">Disconnect</button>
+      <div class="callout">
+        <svg class="i"><use href="#i-info"/></svg>
+        <div>Spotify refuses <code>localhost</code> and requires HTTPS for anything that is not a
+          loopback address, so the redirect must be <code>127.0.0.1</code> and you must connect from a
+          browser <b>on the server itself</b>. Once connected, the token is stored server-side and
+          everyone on the network can use it.</div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <input type="text" id="sp-filter" placeholder="Filter playlists…" style="flex:1">
-        <div class="seg" id="sp-view" role="group" aria-label="Layout">
-          <button data-view="grid" class="on" title="Grid view">▦ Grid</button>
-          <button data-view="list" title="List view">☰ List</button>
+    </div>
+
+    <div class="panel measure" id="sp-connect" hidden>
+      <h2>Connect Spotify</h2>
+      <p class="lede">Read-only access to your playlists. Connect once from a browser on the server;
+        after that anyone on the network can use it without signing in.</p>
+      <button class="btn spotify" type="button" onclick="location.href='/api/spotify/login'">
+        <svg class="i"><use href="#i-note"/></svg>Connect to Spotify
+      </button>
+    </div>
+
+    <div id="sp-list" hidden>
+      <div class="toolbar">
+        <div class="account">
+          <span class="avatar" id="sp-avatar"><svg class="i"><use href="#i-user"/></svg></span>
+          <div class="who"><b id="sp-user">Your playlists</b><span id="sp-count"></span></div>
         </div>
-        <span class="ver out-hint"></span>
+        <div class="tools">
+          <button class="btn ghost sm" id="sp-reload" type="button"><svg class="i"><use href="#i-refresh"/></svg>Reload</button>
+          <button class="btn ghost sm danger" id="sp-disconnect" type="button">Disconnect</button>
+        </div>
       </div>
-      <div class="grid" id="sp-grid"></div>
+      <div class="filters">
+        <label class="field"><span class="visually-hidden">Filter playlists</span>
+          <svg class="i"><use href="#i-search"/></svg>
+          <input type="search" id="sp-filter" placeholder="Filter playlists…" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="seg" id="sp-view" role="group" aria-label="Layout">
+          <button type="button" data-view="grid" aria-pressed="true" title="Grid"><svg class="i"><use href="#i-grid"/></svg><span class="lbl">Grid</span></button>
+          <button type="button" data-view="list" aria-pressed="false" title="List"><svg class="i"><use href="#i-list"/></svg><span class="lbl">List</span></button>
+        </div>
+      </div>
+      <div class="skeleton" id="sp-skel"><div></div><div></div><div></div><div></div><div></div><div></div></div>
+      <div class="grid" id="sp-grid" hidden></div>
       <div class="empty" id="sp-empty" hidden>No playlists found.</div>
     </div>
-  </div>
+  </section>
 
-  <!-- ============ CSV ============ -->
-  <div class="view" id="view-csv">
-    <div class="panel">
-      <h3>Get a CSV from Exportify</h3>
-      <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px">
-        Use this when you would rather not connect Spotify here. Exportify is a
-        separate site that turns a Spotify playlist into a CSV file.
-      </p>
-      <ol style="font-size:13.5px;color:var(--muted);padding-left:20px;margin:0 0 16px">
-        <li>Open <a href="https://exportify.app/" target="_blank"
-            rel="noopener noreferrer"><b>exportify.app</b></a> and click
-            <b>Get Started</b>.</li>
+  <!-- ============================================================ CSV -->
+  <section class="view" id="view-csv" role="tabpanel">
+    <div class="panel measure">
+      <h2>Get a CSV from Exportify</h2>
+      <p class="lede">Use this when you would rather not connect Spotify here. Exportify is a separate
+        site that turns a Spotify playlist into a CSV file.</p>
+      <ol class="steps">
+        <li>Open <a href="https://exportify.app/" target="_blank" rel="noopener noreferrer"><b>exportify.app</b>
+          <svg class="i" style="font-size:12px"><use href="#i-ext"/></svg></a> and click <b>Get Started</b>.</li>
         <li>Log in with Spotify and allow read-only access to your playlists.</li>
-        <li>Find the playlist you want and click its <b>export</b> button to
-            get a <code>.csv</code> file.</li>
+        <li>Find the playlist you want and click its <b>export</b> button to get a <code>.csv</code> file.</li>
         <li>Drop that file below.</li>
       </ol>
-      <div class="drop" id="drop">
-        <span id="drop-text">Drop the CSV here, or click to choose</span>
-        <input type="file" id="file" accept=".csv" hidden>
+
+      <div class="drop" id="drop" role="button" tabindex="0" aria-label="Choose a CSV file">
+        <span class="ico"><svg class="i" id="drop-icon"><use href="#i-upload"/></svg></span>
+        <span class="t" id="drop-text">Drop the CSV here, or click to choose</span>
+        <span class="s" id="drop-sub">.csv only</span>
+        <input type="file" id="file" accept=".csv,text/csv" hidden>
       </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">
-        The playlist name becomes the folder name, and it gets the CSV and an
-        <code>.m3u</code> alongside the tracks. Tracks you already have are
-        skipped.
-      </p>
-      <div style="margin-top:18px;display:flex;flex-direction:column;
-                  align-items:center;gap:8px">
-        <button class="btn primary" id="btn-start">Process Playlist</button>
-        <span class="ver out-hint"></span>
+      <p class="fine" style="margin-top:12px">The playlist name becomes the folder name, and it gets the CSV
+        and an <code>.m3u</code> alongside the tracks. Tracks you already have are skipped.</p>
+
+      <div class="actions">
+        <button class="btn primary lg" id="btn-start" type="button">Process Playlist</button>
+        <span class="hint out-hint"></span>
       </div>
     </div>
-  </div>
+  </section>
 
-  <!-- ============ SETTINGS ============ -->
-  <div class="view" id="view-settings">
+  <!-- ============================================================ QUEUE -->
+  <section class="view stack" id="view-queue" role="tabpanel">
     <div class="panel">
-      <h3>Output file</h3>
-      <label class="field">Format</label>
-      <div class="radios" id="formats">
-        <label data-fmt="mp3" class="on"><input type="radio" name="fmt" value="mp3" checked> MP3</label>
-        <label data-fmt="m4a"><input type="radio" name="fmt" value="m4a"> M4A</label>
-      </div>
-      <div class="note show" id="fmt-note"></div>
-
-      <label class="field" style="margin-top:18px">MP3 bitrate</label>
-      <div class="radios" id="bitrates">
-        <label data-br="128"><input type="radio" name="br" value="128"> 128k</label>
-        <label data-br="192" class="on"><input type="radio" name="br" value="192" checked> 192k</label>
-        <label data-br="320"><input type="radio" name="br" value="320"> 320k</label>
-      </div>
-      <div class="note show" id="br-note"></div>
-    </div>
-
-    <div class="panel">
-      <h3>yt-dlp</h3>
-      <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px">
-        YouTube changes often and yt-dlp is what keeps up. When tracks start
-        failing, update here — or just restart the container, which does the same
-        on boot.
-      </p>
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <span class="ver">Running version <b id="ytdlp">…</b>
-          · app <b id="appver">…</b></span>
-        <span class="spacer"></span>
-        <button class="btn" id="btn-update">Check for update</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============ QUEUE ============ -->
-  <div class="view" id="view-queue">
-    <div class="panel">
-      <h3>In progress</h3>
-      <div id="q-current"><div class="empty">Nothing running.</div></div>
+      <div class="panel-head"><h2>In progress</h2></div>
+      <div id="q-current"><div class="empty left">Nothing running.</div></div>
       <div id="q-failbox"></div>
     </div>
     <div class="panel">
-      <div style="display:flex;align-items:center">
-        <h3 style="margin:0">Waiting</h3><span class="spacer"></span>
-        <button class="link" id="btn-clear">Clear waiting</button>
+      <div class="panel-head">
+        <h2>Waiting</h2><span class="spacer"></span>
+        <button class="btn ghost sm" id="btn-clear" type="button" hidden>Clear waiting</button>
       </div>
-      <div id="q-pending"><div class="empty">Queue is empty.</div></div>
+      <div class="rows" id="q-pending"><div class="empty left">Queue is empty.</div></div>
     </div>
     <div class="panel">
-      <h3>Recent</h3>
-      <div id="q-recent"><div class="empty">Nothing yet.</div></div>
+      <div class="panel-head"><h2>Recent</h2></div>
+      <div class="rows" id="q-recent"><div class="empty left">Nothing yet.</div></div>
     </div>
-  </div>
-</div>
+  </section>
+
+  <!-- ============================================================ SETTINGS -->
+  <section class="view stack" id="view-settings" role="tabpanel">
+    <div class="panel measure">
+      <h2>Output file</h2>
+      <p class="lede">Applies to every playlist queued from this browser.</p>
+
+      <p class="label">Format</p>
+      <div class="opts two" id="formats" role="radiogroup" aria-label="Format">
+        <label class="opt on" data-fmt="mp3"><input type="radio" name="fmt" value="mp3" checked>
+          <span class="radio"></span><span class="txt"><b>MP3</b><span id="fmt-mp3-note">Re-encoded. Plays anywhere.</span></span></label>
+        <label class="opt" data-fmt="m4a"><input type="radio" name="fmt" value="m4a">
+          <span class="radio"></span><span class="txt"><b>M4A</b><span id="fmt-m4a-note">Source stream copied, no re-encode.</span></span></label>
+      </div>
+
+      <div class="group" id="br-group">
+        <p class="label">MP3 bitrate</p>
+        <div class="opts three" id="bitrates" role="radiogroup" aria-label="MP3 bitrate">
+          <label class="opt" data-br="128"><input type="radio" name="br" value="128"><span class="radio"></span><span class="txt"><b>128k</b><span>Smallest</span></span></label>
+          <label class="opt on" data-br="192"><input type="radio" name="br" value="192" checked><span class="radio"></span><span class="txt"><b>192k</b><span>Default</span></span></label>
+          <label class="opt" data-br="320"><input type="radio" name="br" value="320"><span class="radio"></span><span class="txt"><b>320k</b><span>Largest</span></span></label>
+        </div>
+      </div>
+      <div class="note" id="br-note"><svg class="i"><use href="#i-info"/></svg><span></span></div>
+    </div>
+
+    <div class="panel measure">
+      <h2>yt-dlp</h2>
+      <p class="lede">YouTube changes often and yt-dlp is the piece that keeps up. When tracks start
+        failing, update here, or restart the container, which does the same on boot.</p>
+      <dl class="kv">
+        <dt>yt-dlp</dt><dd id="ytdlp">…</dd>
+        <dt>App</dt><dd id="appver">…</dd>
+      </dl>
+      <button class="btn" id="btn-update" type="button"><span class="spin"></span><span class="lbl">Check for update</span></button>
+    </div>
+  </section>
+</main>
+
+<dialog class="confirm" id="dlg">
+  <form method="dialog">
+    <h3 id="dlg-title">Are you sure?</h3>
+    <p id="dlg-body"></p>
+    <div class="acts">
+      <button class="btn" value="cancel" type="submit" id="dlg-no">Keep</button>
+      <button class="btn danger solid" value="ok" type="submit" id="dlg-ok">Confirm</button>
+    </div>
+  </form>
+</dialog>
 
 <script>
+'use strict';
 const $ = id => document.getElementById(id);
-const ICON = { ok:'✓', fail:'✕', skip:'⏭', warn:'!', info:'·', error:'✕' };
-const LEVEL = { 128:'warn', 192:'ok', 320:'' };
-let NOTES = {}, FMT_NOTES = {}, spLoaded = false, spPlaylists = [],
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const icon = name => `<svg class="i" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const fmtElapsed = s => {
+  s = Math.max(0, Math.round(s || 0));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), r = s % 60;
+  if (m < 60) return `${m}m ${String(r).padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+};
+
+let NOTES = {}, FMT_NOTES = {}, spLoaded = false, spLoading = false, spPlaylists = [],
     spConnected = false, curTab = 'spotify';
 
-/* Output settings persist per browser. Wrapped because private windows and
-   blocked site-data make localStorage throw rather than return null. */
+/* ------------------------------------------------------------ settings (per browser) */
 const SETTINGS = { format: 'mp3', bitrate: '192', view: 'grid' };
 function loadSettings() {
-  try {
-    const raw = localStorage.getItem('pd-output');
-    if (raw) Object.assign(SETTINGS, JSON.parse(raw));
-  } catch (e) {}
+  try { const raw = localStorage.getItem('pd-output'); if (raw) Object.assign(SETTINGS, JSON.parse(raw)); } catch (e) {}
 }
-function saveSettings() {
-  try { localStorage.setItem('pd-output', JSON.stringify(SETTINGS)); } catch (e) {}
+function saveSettings() { try { localStorage.setItem('pd-output', JSON.stringify(SETTINGS)); } catch (e) {} }
+
+/* ------------------------------------------------------------ message bar */
+let msgTimer = null;
+function flash(text, good) {
+  clearTimeout(msgTimer);
+  const m = $('msg');
+  $('msg-text').textContent = text;
+  $('msg-icon').innerHTML = `<use href="#i-${good ? 'check' : 'warn'}"/>`;
+  m.className = 'msg show ' + (good ? 'good' : 'err');
+  if (good) msgTimer = setTimeout(hideMsg, 6000);
+}
+function hideMsg() { clearTimeout(msgTimer); $('msg').className = 'msg'; }
+$('msg-close').addEventListener('click', hideMsg);
+
+/* ------------------------------------------------------------ confirm dialog */
+function confirmAction({ title, body, action }) {
+  const dlg = $('dlg');
+  if (!dlg.showModal) return Promise.resolve(window.confirm(`${title}\n\n${body}`));
+  $('dlg-title').textContent = title;
+  $('dlg-body').textContent = body;
+  $('dlg-ok').textContent = action;
+  return new Promise(resolve => {
+    const done = () => { dlg.removeEventListener('close', done); resolve(dlg.returnValue === 'ok'); };
+    dlg.addEventListener('close', done);
+    dlg.returnValue = 'cancel';
+    dlg.showModal();
+    $('dlg-no').focus();
+  });
 }
 
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"]/g,
-    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-}
-function flash(text, good) {
-  const m = $('msg');
-  m.textContent = text;
-  m.className = 'msg show ' + (good ? 'good' : 'err');
-  if (good) setTimeout(() => m.className = 'msg', 6000);
-}
+/* ------------------------------------------------------------ api */
 async function api(path, fields) {
   const opts = { method: 'POST' };
-  if (fields) {
-    opts.body = fields instanceof FormData
-      ? fields
-      : new URLSearchParams(fields);
-  }
+  if (fields) opts.body = fields instanceof FormData ? fields : new URLSearchParams(fields);
   const r = await fetch(path, opts);
   let j = {};
   try { j = await r.json(); } catch (e) {}
-  if (r.status === 401 && j.login) {
-    location.href = '/login';
-    throw new Error('Signed out.');
-  }
+  if (r.status === 401 && j.login) { location.href = '/login'; throw new Error('Signed out.'); }
   if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
   return j;
 }
 
-/* ---------- tabs ---------- */
-document.querySelectorAll('.tabs button').forEach(b =>
-  b.addEventListener('click', () => showTab(b.dataset.tab)));
-
+/* ------------------------------------------------------------ tabs */
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 function showTab(name) {
   curTab = name;
-  document.querySelectorAll('.tabs button').forEach(b =>
-    b.classList.toggle('on', b.dataset.tab === name));
-  ['spotify','csv','queue','settings'].forEach(v =>
-    $('view-' + v).classList.toggle('on', v === name));
+  document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+  ['spotify', 'csv', 'queue', 'settings'].forEach(v => $('view-' + v).classList.toggle('on', v === name));
   if (name === 'spotify' && spConnected && !spLoaded) loadSpotify();
 }
 
-/* ---------- output settings ---------- */
-function chosenBitrate() { return SETTINGS.bitrate; }
-function chosenFormat() { return SETTINGS.format; }
+/* ------------------------------------------------------------ output settings */
+const LEVEL = { 128: 'warn', 192: 'ok', 320: '' };
+const BR_SHORT = { 128: 'Smallest', 192: 'Default', 320: 'Largest' };
 
 function renderOutput() {
   const { format, bitrate } = SETTINGS;
   const isM4a = format === 'm4a';
 
-  document.querySelectorAll('#formats label').forEach(l =>
-    l.classList.toggle('on', l.dataset.fmt === format));
-  document.querySelectorAll('#formats input').forEach(i =>
-    i.checked = i.value === format);
-
-  const fn = $('fmt-note');
-  fn.innerHTML = FMT_NOTES[format]
-    ? `<b>${format.toUpperCase()}</b> — ${esc(FMT_NOTES[format])}` : '';
-  fn.className = 'note' + (fn.innerHTML ? ' show ' : ' ') + (isM4a ? 'ok' : '');
-
-  // Bitrate only means something when we are re-encoding.
-  document.querySelectorAll('#bitrates label').forEach(l => {
-    l.classList.toggle('on', !isM4a && l.dataset.br === bitrate);
-    l.style.opacity = isM4a ? '.4' : '';
-    l.style.pointerEvents = isM4a ? 'none' : '';
+  document.querySelectorAll('#formats .opt').forEach(l => {
+    const on = l.dataset.fmt === format;
+    l.classList.toggle('on', on);
+    l.querySelector('input').checked = on;
   });
-  document.querySelectorAll('#bitrates input').forEach(i =>
-    i.checked = i.value === bitrate);
+  if (FMT_NOTES.mp3) $('fmt-mp3-note').textContent = FMT_NOTES.mp3;
+  if (FMT_NOTES.m4a) $('fmt-m4a-note').textContent = FMT_NOTES.m4a;
 
-  const bn = $('br-note');
+  $('br-group').classList.toggle('off', isM4a);
+  $('br-group').setAttribute('aria-disabled', String(isM4a));
+  document.querySelectorAll('#bitrates .opt').forEach(l => {
+    const on = l.dataset.br === bitrate;
+    l.classList.toggle('on', on);
+    const inp = l.querySelector('input');
+    inp.checked = on; inp.disabled = isM4a;
+    l.querySelector('.txt span').textContent = BR_SHORT[l.dataset.br] || '';
+  });
+
+  const note = $('br-note'), txt = note.querySelector('span');
   if (isM4a) {
-    bn.innerHTML = 'Not used for M4A — the source stream is copied as-is.';
-    bn.className = 'note show';
+    txt.innerHTML = 'Bitrate is not used for <b>M4A</b>. The source stream is copied as-is, so there is nothing to re-encode.';
+    note.className = 'note ok';
   } else {
-    bn.innerHTML = NOTES[bitrate]
-      ? `<b>${bitrate} kbps</b> — ${esc(NOTES[bitrate])}` : '';
-    bn.className = 'note' + (bn.innerHTML ? ' show ' : ' ') + (LEVEL[bitrate] || '');
+    txt.innerHTML = NOTES[bitrate] ? `<b>${bitrate} kbps</b>: ${esc(NOTES[bitrate])}` : '';
+    note.className = 'note ' + (LEVEL[bitrate] || '');
   }
+  note.hidden = !txt.innerHTML;
 
-  const hint = isM4a ? 'Output: M4A (copy)' : `Output: MP3 @ ${bitrate}k`;
+  const hint = isM4a ? 'Output: M4A, source copied' : `Output: MP3 at ${bitrate} kbps`;
   document.querySelectorAll('.out-hint').forEach(e => e.textContent = hint);
 }
-
 document.querySelectorAll('#formats input').forEach(r =>
-  r.addEventListener('change', () => {
-    SETTINGS.format = r.value; saveSettings(); renderOutput();
-  }));
+  r.addEventListener('change', () => { SETTINGS.format = r.value; saveSettings(); renderOutput(); }));
 document.querySelectorAll('#bitrates input').forEach(r =>
-  r.addEventListener('change', () => {
-    SETTINGS.bitrate = r.value; saveSettings(); renderOutput();
-  }));
+  r.addEventListener('change', () => { SETTINGS.bitrate = r.value; saveSettings(); renderOutput(); }));
 
-/* ---------- spotify ---------- */
+/* ------------------------------------------------------------ spotify */
 async function loadSpotify() {
+  if (spLoading) return;
+  spLoading = true;
+  $('sp-reload').classList.add('busy');
+  if (!spLoaded) { $('sp-skel').hidden = false; $('sp-grid').hidden = true; $('sp-empty').hidden = true; }
   try {
     const r = await fetch('/api/spotify/playlists');
     const j = await r.json();
-    if (!r.ok) { spLoaded = false; return; }
+    // A plain 401 here only means Spotify is not connected; never treat it as a sign-out.
+    if (r.status === 401 && j.login) { location.href = '/login'; return; }
+    if (!r.ok) { spLoaded = false; if (j.error) flash(j.error, false); return; }
     spLoaded = true;
     spPlaylists = j.playlists || [];
-    $('sp-user').textContent = (j.me && j.me.name) ? j.me.name + '’s playlists' : 'Your playlists';
+    const me = j.me || {};
+    $('sp-user').textContent = me.name ? `${me.name}’s playlists` : 'Your playlists';
+    $('sp-avatar').innerHTML = me.image
+      ? `<img src="${esc(me.image)}" alt="" width="32" height="32" style="width:100%;height:100%;object-fit:cover">`
+      : icon('user');
     renderPlaylists();
-  } catch (e) { spLoaded = false; }
+  } catch (e) { spLoaded = false; flash('Could not load playlists.', false); }
+  finally {
+    spLoading = false;
+    $('sp-reload').classList.remove('busy');
+    $('sp-skel').hidden = true;
+    if (spLoaded) $('sp-grid').hidden = false;
+  }
 }
 
 function renderPlaylists() {
-  const q = ($('sp-filter').value || '').toLowerCase();
+  const q = ($('sp-filter').value || '').trim().toLowerCase();
   const rows = spPlaylists.filter(p => !q || (p.name || '').toLowerCase().includes(q));
+  $('sp-count').textContent = q
+    ? `${rows.length} of ${plural(spPlaylists.length, 'playlist')}`
+    : plural(spPlaylists.length, 'playlist');
   $('sp-empty').hidden = rows.length > 0;
+  $('sp-grid').hidden = rows.length === 0;
   $('sp-grid').innerHTML = rows.map(p => {
     const art = p.image
-      ? `<img src="${esc(p.image)}" alt="">`
-      : `<div class="ph">♫</div>`;
+      ? `<img class="art" src="${esc(p.image)}" alt="" loading="lazy">`
+      : `<span class="art ph">${icon('note')}</span>`;
     const tags = (p.collaborative ? '<span class="tag">shared</span>' : '')
                + (p.public ? '<span class="tag">public</span>' : '');
-    return `<div class="card">
+    return `<article class="card">
       ${art}
       <div class="meta">
-        <div class="nm">${esc(p.name)}${tags}</div>
-        <div class="sub">${p.tracks} track${p.tracks === 1 ? '' : 's'}${
-          p.owner ? ' · ' + esc(p.owner) : ''}</div>
+        <div class="nm" title="${esc(p.name)}"><span class="t">${esc(p.name)}</span>${tags}</div>
+        <div class="sub"><span class="num">${plural(p.tracks, 'track')}</span>${
+          p.owner ? `<span class="sep">·</span><span class="owner">${esc(p.owner)}</span>` : ''}</div>
       </div>
-      <button class="mini" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Save CSV</button>
-    </div>`;
+      <button class="btn sm" type="button" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Save CSV</button>
+    </article>`;
   }).join('');
   $('sp-grid').querySelectorAll('button[data-id]').forEach(b =>
     b.addEventListener('click', () => queuePlaylist(b, b.dataset.id, b.dataset.name)));
 }
 
 function applyView() {
-  const list = SETTINGS.view === 'list';
-  $('sp-grid').classList.toggle('list', list);
+  $('sp-grid').classList.toggle('list', SETTINGS.view === 'list');
   $('sp-view').querySelectorAll('button').forEach(b =>
-    b.classList.toggle('on', b.dataset.view === SETTINGS.view));
+    b.setAttribute('aria-pressed', String(b.dataset.view === SETTINGS.view)));
 }
 $('sp-view').addEventListener('click', e => {
   const b = e.target.closest('button[data-view]');
   if (!b) return;
-  SETTINGS.view = b.dataset.view;
-  saveSettings();
-  applyView();
+  SETTINGS.view = b.dataset.view; saveSettings(); applyView();
 });
 
 async function queuePlaylist(btn, id, name) {
@@ -481,8 +916,8 @@ async function queuePlaylist(btn, id, name) {
   btn.textContent = 'Exporting…';
   try {
     const j = await api('/api/spotify/download',
-      { playlist_id: id, name, bitrate: chosenBitrate(), format: chosenFormat() });
-    flash(`Queued “${name}” — ${j.tracks} tracks (position ${j.position}).`, true);
+      { playlist_id: id, name, bitrate: SETTINGS.bitrate, format: SETTINGS.format });
+    flash(`Queued “${name}”, ${plural(j.tracks, 'track')} (position ${j.position}).`, true);
     showTab('queue');
   } catch (e) { flash(e.message, false); }
   btn.disabled = false;
@@ -491,8 +926,14 @@ async function queuePlaylist(btn, id, name) {
 }
 
 $('sp-filter').addEventListener('input', renderPlaylists);
-$('sp-reload').addEventListener('click', () => { spLoaded = false; loadSpotify(); });
+$('sp-reload').addEventListener('click', () => loadSpotify());
 $('sp-disconnect').addEventListener('click', async () => {
+  const ok = await confirmAction({
+    title: 'Disconnect Spotify?',
+    body: 'The stored token is forgotten. Someone will need to connect again from a browser on the server.',
+    action: 'Disconnect',
+  });
+  if (!ok) return;
   try {
     await api('/api/spotify/disconnect');
     spLoaded = false; spPlaylists = [];
@@ -500,254 +941,342 @@ $('sp-disconnect').addEventListener('click', async () => {
     poll();
   } catch (e) { flash(e.message, false); }
 });
-
-/* ---------- csv ---------- */
-const drop = $('drop'), file = $('file');
-drop.addEventListener('click', () => file.click());
-file.addEventListener('change', () => {
-  $('drop-text').textContent = file.files[0] ? file.files[0].name
-    : 'Drop a CSV here, or click to choose';
-});
-['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => {
-  ev.preventDefault(); drop.classList.add('hot');
-}));
-['dragleave','drop'].forEach(e => drop.addEventListener(e, () => drop.classList.remove('hot')));
-drop.addEventListener('drop', ev => {
-  ev.preventDefault();
-  if (ev.dataTransfer.files.length) {
-    file.files = ev.dataTransfer.files;
-    $('drop-text').textContent = ev.dataTransfer.files[0].name;
+$('sp-copy').addEventListener('click', async () => {
+  const text = $('sp-redirect').textContent;
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {
+    try {
+      const range = document.createRange(); range.selectNodeContents($('sp-redirect'));
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      ok = document.execCommand('copy');
+    } catch (e2) {}
   }
+  flash(ok ? 'Redirect URI copied.' : 'Could not copy. Select the text and copy it by hand.', ok);
 });
+
+/* ------------------------------------------------------------ csv */
+const drop = $('drop'), file = $('file');
+const DROP_IDLE = 'Drop the CSV here, or click to choose';
+function setDropFile(f) {
+  const has = !!f;
+  drop.classList.toggle('has', has);
+  $('drop-text').textContent = has ? f.name : DROP_IDLE;
+  $('drop-sub').textContent = has ? 'Ready. Click to choose a different file.' : '.csv only';
+  $('drop-icon').innerHTML = `<use href="#i-${has ? 'file' : 'upload'}"/>`;
+}
+function acceptFiles(files) {
+  const f = files && files[0];
+  if (!f) return;
+  if (!/\.csv$/i.test(f.name)) { flash('Please upload a .csv file.', false); return; }
+  try { file.files = files; } catch (e) {}
+  setDropFile(f);
+}
+drop.addEventListener('click', () => file.click());
+drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); file.click(); } });
+file.addEventListener('change', () => {
+  if (file.files[0] && !/\.csv$/i.test(file.files[0].name)) {
+    flash('Please upload a .csv file.', false); file.value = ''; setDropFile(null); return;
+  }
+  setDropFile(file.files[0]);
+});
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hot'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, () => drop.classList.remove('hot')));
+drop.addEventListener('drop', e => { e.preventDefault(); acceptFiles(e.dataTransfer.files); });
 
 $('btn-start').addEventListener('click', async () => {
-  const fd = new FormData();
-  fd.append('bitrate', chosenBitrate());
-  fd.append('format', chosenFormat());
   if (!file.files[0]) return flash('Choose a CSV file first.', false);
+  const fd = new FormData();
+  fd.append('bitrate', SETTINGS.bitrate);
+  fd.append('format', SETTINGS.format);
   fd.append('csv', file.files[0]);
-  $('btn-start').disabled = true;
+  const b = $('btn-start');
+  b.disabled = true; b.textContent = 'Queueing…';
   try {
     const j = await api('/api/start', fd);
     flash(`Queued “${j.job.name}” (position ${j.position}).`, true);
-    file.value = '';
-    $('drop-text').textContent = 'Drop the CSV here, or click to choose';
+    file.value = ''; setDropFile(null);
     showTab('queue');
   } catch (e) { flash(e.message, false); }
-  $('btn-start').disabled = false;
+  b.disabled = false; b.textContent = 'Process Playlist';
   poll();
 });
 
-/* ---------- queue ---------- */
-async function cancelJob(id) {
-  try { await api('/api/cancel', { job_id: id }); poll(); }
+/* ------------------------------------------------------------ queue actions */
+async function cancelJob(job, running) {
+  const ok = await confirmAction({
+    title: running ? 'Cancel this playlist?' : 'Remove from the queue?',
+    body: running
+      ? `“${job.name}” stops after the current track. Tracks already saved are kept.`
+      : `“${job.name}” will not be processed.`,
+    action: running ? 'Cancel playlist' : 'Remove',
+  });
+  if (!ok) return;
+  try { await api('/api/cancel', { job_id: job.id }); poll(); }
   catch (e) { flash(e.message, false); }
 }
 $('btn-clear').addEventListener('click', async () => {
+  const n = (lastData && lastData.pending || []).length;
+  const ok = await confirmAction({
+    title: 'Clear the waiting list?',
+    body: `${plural(n, 'playlist')} will be removed. The one in progress keeps going.`,
+    action: 'Clear waiting',
+  });
+  if (!ok) return;
   try {
     const j = await api('/api/cancel-all');
-    flash(`Dropped ${j.dropped} waiting job${j.dropped === 1 ? '' : 's'}.`, true);
+    flash(`Removed ${plural(j.dropped, 'waiting playlist')}.`, true);
     poll();
   } catch (e) { flash(e.message, false); }
 });
 
-/* ---------- track lists ----------
-   Shared by the running job and by an expanded Recent job. Both read the same
-   per-track events the server already records, so nothing new is stored. */
-
+/* ------------------------------------------------------------ track lists
+   One component, used by the running job and by expanded Recent jobs. It owns
+   its DOM and only rebuilds the table body when the row set actually changes,
+   so streaming updates never reset scroll or pull buttons out from under a tap. */
 const KINDS = ['ok', 'skip', 'fail'];
-const KIND_NAME = { ok:'Saved', skip:'Skipped', fail:'Failed',
-                    warn:'Warning', info:'Info', error:'Error' };
-const KIND_RANK = { fail:0, warn:1, ok:2, skip:3, info:4, error:0 };
+const KIND_NAME = { ok: 'Saved', skip: 'Skipped', fail: 'Failed' };
+const KIND_RANK = { fail: 0, ok: 1, skip: 2 };
+const isTrack = e => KINDS.includes(e.kind);
 
-function isTrack(e) { return KINDS.includes(e.kind); }
-
-function chipRow(counts, active, prefix) {
-  const mk = (key, label, extra) =>
-    `<button class="chip ${extra || ''} ${active === key ? 'on' : ''}" `
-    + `data-${prefix}="${key}">${label}</button>`;
-  return `<div class="chips">
-    ${mk('all', 'All ' + counts.all)}
-    ${mk('ok', 'Saved ' + counts.ok)}
-    ${mk('skip', 'Skipped ' + counts.skip)}
-    ${mk('fail', 'Failed ' + counts.fail, 'fail-chip')}
-  </div>`;
+function TrackList(host, { sort }) {
+  this.host = host;
+  this.filter = 'all';
+  this.sort = sort;
+  this.events = [];
+  this.sig = null;
+  host.innerHTML = `
+    <div class="chips" role="group" aria-label="Filter tracks"></div>
+    <div class="tl"><div class="scroll"><table>
+      <thead><tr>
+        <th class="c-status" data-sort="status"><button type="button">Status ${icon('chev')}</button></th>
+        <th data-sort="track"><button type="button">Track ${icon('chev')}</button></th>
+        <th class="c-order" data-sort="order"><button type="button" style="justify-content:flex-end">Order ${icon('chev')}</button></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div></div>`;
+  host.querySelectorAll('th svg').forEach(s => s.classList.add('arr'));
+  this.chips = host.querySelector('.chips');
+  this.scroll = host.querySelector('.scroll');
+  this.tbody = host.querySelector('tbody');
+  this.chips.addEventListener('click', e => {
+    const b = e.target.closest('[data-filter]'); if (!b) return;
+    this.filter = b.dataset.filter; this.render(true);
+  });
+  host.querySelectorAll('th[data-sort]').forEach(th => th.addEventListener('click', () => {
+    const by = th.dataset.sort;
+    // Order defaults newest-first while streaming; the others default ascending.
+    this.sort = { by, desc: this.sort.by === by ? !this.sort.desc : by === 'order' };
+    this.render(true);
+  }));
 }
+TrackList.prototype.update = function (events) { this.events = events || []; this.render(false); };
+TrackList.prototype.render = function (reset) {
+  const tracks = this.events.filter(isTrack);
+  const counts = { all: tracks.length, ok: 0, skip: 0, fail: 0 };
+  tracks.forEach(e => counts[e.kind]++);
 
-function countKinds(events) {
-  const c = { all:0, ok:0, skip:0, fail:0 };
-  events.forEach(e => { if (isTrack(e)) { c.all++; c[e.kind]++; } });
-  return c;
-}
+  this.chips.innerHTML = [['all', 'All'], ['ok', 'Saved'], ['skip', 'Skipped'], ['fail', 'Failed']].map(([k, label]) =>
+    `<button type="button" class="chip ${k === 'fail' ? 'fail' : ''} ${k !== 'all' && !counts[k] ? 'zero' : ''}"
+       data-filter="${k}" aria-pressed="${this.filter === k}">${label}<span class="num n">${counts[k]}</span></button>`).join('');
 
-/* Newest-first by default: while a job runs, the interesting row is the last
-   one, and putting it on top means the list never scrolls under the reader. */
-function trackTable(events, filter, sort) {
-  let rows = events.filter(isTrack);
-  if (filter !== 'all') rows = rows.filter(e => e.kind === filter);
-  rows = rows.map((e, i) => ({ ...e, i }));
-  const dir = sort.desc ? -1 : 1;
-  if (sort.by === 'status')
+  this.host.querySelectorAll('th[data-sort]').forEach(th => {
+    if (th.dataset.sort === this.sort.by) th.setAttribute('aria-sort', this.sort.desc ? 'descending' : 'ascending');
+    else th.removeAttribute('aria-sort');
+  });
+
+  const sig = [this.events.length, this.filter, this.sort.by, this.sort.desc].join('|');
+  if (sig === this.sig && !reset) return;
+  this.sig = sig;
+
+  let n = 0;
+  let rows = tracks.map(e => ({ ...e, i: n++ }));
+  if (this.filter !== 'all') rows = rows.filter(e => e.kind === this.filter);
+  const dir = this.sort.desc ? -1 : 1;
+  if (this.sort.by === 'status')
     rows.sort((a, b) => (KIND_RANK[a.kind] - KIND_RANK[b.kind]) * dir || a.i - b.i);
-  else if (sort.by === 'track')
-    rows.sort((a, b) => String(a.text).localeCompare(String(b.text)) * dir);
+  else if (this.sort.by === 'track')
+    rows.sort((a, b) => String(a.text).localeCompare(String(b.text), undefined, { sensitivity: 'base' }) * dir);
   else
     rows.sort((a, b) => (a.i - b.i) * dir);
 
-  if (!rows.length)
-    return `<div class="empty">Nothing ${filter === 'all' ? 'yet' : 'in this filter'}.</div>`;
+  const sc = this.scroll, prevTop = sc.scrollTop, prevH = sc.scrollHeight;
+  this.tbody.innerHTML = rows.length ? rows.map(e => `<tr>
+      <td class="c-status"><span class="st ${e.kind}">${KIND_NAME[e.kind]}</span></td>
+      <td>${esc(e.text)}${e.detail ? `<div class="${e.kind === 'fail' ? 'err' : 'det'}">${esc(e.detail)}</div>` : ''}</td>
+      <td class="c-order">${e.i + 1}</td>
+    </tr>`).join('')
+    : `<tr><td colspan="3"><div class="empty">${this.filter === 'all' ? 'No tracks yet.' : 'Nothing in this filter.'}</div></td></tr>`;
 
-  const arrow = k => sort.by === k ? (sort.desc ? ' ▾' : ' ▴') : '';
-  return `<div class="tl"><table>
-    <thead><tr>
-      <th data-sort="status" style="width:110px">Status${arrow('status')}</th>
-      <th data-sort="track">Track${arrow('track')}</th>
-      <th data-sort="order" style="width:90px">Order${arrow('order')}</th>
-    </tr></thead>
-    <tbody>${rows.map(e => `<tr>
-      <td><span class="st ${e.kind}">${KIND_NAME[e.kind] || e.kind}</span></td>
-      <td>${esc(e.text)}${e.detail ? `<div class="d">${esc(e.detail)}</div>` : ''}</td>
-      <td class="ver">${e.i + 1}</td>
-    </tr>`).join('')}</tbody></table></div>`;
-}
+  if (reset) { sc.scrollTop = 0; return; }
+  // Rows arriving at the top would push the reader's row down; compensate so
+  // what they are looking at stays put. At the very top, new rows just appear.
+  if (prevTop > 0 && this.sort.by === 'order' && this.sort.desc) sc.scrollTop = prevTop + (sc.scrollHeight - prevH);
+  else sc.scrollTop = prevTop;
+};
 
-/* ---------- in progress ----------
-   Rebuilt in place rather than by replacing innerHTML every poll: the old code
-   re-rendered the whole panel and force-scrolled to the bottom each time, which
-   is why the scrollbar fought the reader while entries streamed in. */
-
-let curJob = null, curFilter = 'all', curSort = { by:'order', desc:true };
+/* ------------------------------------------------------------ in progress
+   Built once per job, then updated field by field, so the Cancel button and the
+   table keep their identity across polls. */
+let cur = null;   // { id, list, els }
 
 function renderCurrent(j) {
   const host = $('q-current');
   if (!j) {
-    host.innerHTML = '<div class="empty">Nothing running.</div>';
-    $('q-failbox').innerHTML = '';
-    curJob = null;
+    if (cur) { host.innerHTML = '<div class="empty left">Nothing running.</div>'; $('q-failbox').innerHTML = ''; cur = null; }
     return;
   }
-  const fresh = !curJob || curJob !== j.id;
-  if (fresh) { curJob = j.id; curFilter = 'all'; curSort = { by:'order', desc:true }; }
+  if (!cur || cur.id !== j.id) {
+    host.innerHTML = `
+      <div class="job-head">
+        <div class="title"><h3></h3><div class="fmt"><span class="pill"></span></div></div>
+        <button class="btn sm danger" type="button">Cancel</button>
+      </div>
+      <div class="progress"><div class="track"><i></i></div><span class="pct num"></span></div>
+      <div class="stats">
+        <div class="stat"><span class="k">Processed</span><span class="v num" data-k="done"></span></div>
+        <div class="stat ok"><span class="k">Saved</span><span class="v num" data-k="downloaded"></span></div>
+        <div class="stat skip"><span class="k">Skipped</span><span class="v num" data-k="skipped"></span></div>
+        <div class="stat fail"><span class="k">Failed</span><span class="v num" data-k="failed"></span></div>
+        <div class="stat"><span class="k">Elapsed</span><span class="v num" data-k="elapsed"></span></div>
+      </div>
+      <div class="now" hidden><span class="eq"><i></i><i></i><i></i></span><span class="lbl">Fetching</span><span class="tk"></span></div>
+      <div class="tracks"></div>`;
+    cur = {
+      id: j.id,
+      els: {
+        name: host.querySelector('h3'), fmt: host.querySelector('.pill'), cancel: host.querySelector('.btn'),
+        bar: host.querySelector('.track i'), pct: host.querySelector('.pct'), now: host.querySelector('.now'),
+        tk: host.querySelector('.tk'), stats: {},
+      },
+      list: new TrackList(host.querySelector('.tracks'), { sort: { by: 'order', desc: true } }),
+    };
+    host.querySelectorAll('.stat').forEach(s => { cur.els.stats[s.querySelector('.v').dataset.k] = s; });
+    cur.els.cancel.addEventListener('click', () => cancelJob(j, true));
+  }
+  const e = cur.els;
+  e.name.textContent = j.name;
+  e.fmt.textContent = j.format;
+  const pct = j.total ? Math.round(100 * j.done / j.total) : 0;
+  e.bar.style.width = pct + '%';
+  e.pct.textContent = pct + '%';
+  e.stats.done.querySelector('.v').innerHTML = `${j.done}<small>/${j.total}</small>`;
+  ['downloaded', 'skipped', 'failed'].forEach(k => {
+    e.stats[k].querySelector('.v').textContent = j[k];
+    e.stats[k].classList.toggle('zero', !j[k]);
+  });
+  e.stats.elapsed.querySelector('.v').textContent = fmtElapsed(j.elapsed);
+  e.now.hidden = !j.current;
+  if (j.current) e.tk.textContent = j.current;
 
   const events = j.events || [];
-  const counts = countKinds(events);
-  const pct = j.total ? (100 * j.done / j.total) : 0;
+  cur.list.update(events);
 
-  // Keep the reader's scroll position across re-renders.
-  const prev = host.querySelector('.tl');
-  const keepTop = prev ? prev.scrollTop : 0;
-
-  host.innerHTML = `
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-      <b>${esc(j.name)}</b><span class="pill">${esc(j.format)}</span>
-      <span class="spacer"></span>
-      <button class="mini" id="btn-cancel-cur">Cancel</button>
-    </div>
-    <div class="bar"><i style="width:${pct}%"></i></div>
-    <div class="stats">
-      <span><b>${j.done}</b>/<b>${j.total}</b> processed</span>
-      <span>✅ <b>${j.downloaded}</b></span>
-      <span>⏭️ <b>${j.skipped}</b></span>
-      <span>❌ <b>${j.failed}</b></span>
-      <span>${j.elapsed}s</span>
-    </div>
-    ${j.current ? `<div style="margin-top:9px">🎵 ${esc(j.current)}</div>` : ''}
-    ${chipRow(counts, curFilter, 'cfilter')}
-    ${trackTable(events, curFilter, curSort)}`;
-
-  const now = host.querySelector('.tl');
-  if (now && !fresh) now.scrollTop = keepTop;
-
-  const b = $('btn-cancel-cur');
-  if (b) b.addEventListener('click', () => cancelJob(j.id));
-  host.querySelectorAll('[data-cfilter]').forEach(el =>
-    el.addEventListener('click', () => {
-      curFilter = el.dataset.cfilter; renderCurrent(j);
-    }));
-  host.querySelectorAll('.tl th[data-sort]').forEach(el =>
-    el.addEventListener('click', () => {
-      const by = el.dataset.sort;
-      curSort = { by, desc: curSort.by === by ? !curSort.desc : true };
-      renderCurrent(j);
-    }));
-
-  // A dedicated failures box, so they are visible without hunting the log.
-  const fails = events.filter(e => e.kind === 'fail');
-  $('q-failbox').innerHTML = fails.length ? `<div class="failbox">
-      <h4>Failed (${fails.length})</h4>
-      ${fails.map(e => `<div class="ev fail"><span class="ic">✕</span>
-        <span class="body">${esc(e.text)}${
-          e.detail ? `<div class="d">${esc(e.detail)}</div>` : ''}</span></div>`).join('')}
-    </div>` : '';
+  const fails = events.filter(x => x.kind === 'fail');
+  const box = $('q-failbox');
+  const fsig = fails.length + '|' + j.id;
+  if (box.dataset.sig !== fsig) {
+    box.dataset.sig = fsig;
+    const wasOpen = box.querySelector('details') ? box.querySelector('details').open : true;
+    box.innerHTML = fails.length ? `<details class="failbox" ${wasOpen ? 'open' : ''}>
+        <summary>${icon('warn')}Failed (${fails.length})${icon('chev')}</summary>
+        <ul>${fails.map(x => `<li><b>${esc(x.text)}</b>${x.detail ? `<div>${esc(x.detail)}</div>` : ''}</li>`).join('')}</ul>
+      </details>` : '';
+    const chev = box.querySelector('summary svg:last-child'); if (chev) chev.classList.add('chev');
+  }
 }
 
-/* ---------- waiting / recent ---------- */
+/* ------------------------------------------------------------ waiting / recent */
+const openJobs = {};   // job id -> { events, list }
+const listSig = {};
 
-const openJobs = {};    // job id -> { events, filter, sort }
+function jobSig(jobs, extra) {
+  return jobs.map(j => [j.id, j.state, j.done, j.downloaded, j.skipped, j.failed].join(':')).join(',') + '#' + extra;
+}
 
-function renderList(target, jobs, opts) {
-  if (!jobs.length) {
-    target.innerHTML = `<div class="empty">${opts.empty}</div>`;
-    return;
-  }
-  target.innerHTML = jobs.map((j, i) => {
-    const right = opts.cancel
-      ? `<button class="mini" data-cancel="${esc(j.id)}">Cancel</button>`
-      : `<button class="mini" data-open="${esc(j.id)}">${
-          openJobs[j.id] ? 'Hide tracks' : 'Tracks'}</button>`;
-    const label = opts.cancel ? `#${i + 1}` : esc(j.state);
-    const fails = j.failed
-      ? `<span class="st fail">${j.failed} failed</span>` : '';
-    return `<div class="qrow"><span class="pill">${label}</span>
-      <span class="nm">${esc(j.name)}</span>
-      <span class="ver">${esc(j.format)}</span>
-      <span class="ver">${j.downloaded}✅ ${j.skipped}⏭️</span>${fails}${right}</div>
-      <div id="det-${esc(j.id)}"></div>`;
+function renderPending(jobs) {
+  const host = $('q-pending');
+  const sig = jobSig(jobs, '');
+  $('btn-clear').hidden = !jobs.length;
+  if (listSig.pending === sig) return;
+  listSig.pending = sig;
+  if (!jobs.length) { host.innerHTML = '<div class="empty left">Queue is empty.</div>'; return; }
+  host.innerHTML = jobs.map((j, i) => `<div class="row">
+      <span class="pos">${i + 1}</span>
+      <div class="nm">${esc(j.name)}</div>
+      <button class="btn ghost sm danger act" type="button" data-cancel="${esc(j.id)}">Cancel</button>
+      <div class="sub"><span class="fmt">${esc(j.format)}</span></div>
+    </div>`).join('');
+  host.querySelectorAll('[data-cancel]').forEach(b =>
+    b.addEventListener('click', () => cancelJob(jobs.find(j => j.id === b.dataset.cancel) || { id: b.dataset.cancel, name: '' }, false)));
+}
+
+const STATE_ICON = { done: 'check', cancelled: 'x', error: 'warn' };
+const STATE_LABEL = { done: 'Done', cancelled: 'Cancelled', error: 'Error' };
+
+function renderRecent(jobs) {
+  const host = $('q-recent');
+  const sig = jobSig(jobs, Object.keys(openJobs).join(','));
+  if (listSig.recent === sig) return;
+  listSig.recent = sig;
+  if (!jobs.length) { host.innerHTML = '<div class="empty left">Nothing yet.</div>'; return; }
+  host.innerHTML = jobs.map(j => {
+    const st = STATE_ICON[j.state] ? j.state : 'error';
+    const open = !!openJobs[j.id];
+    return `<div class="row">
+      <span class="state ${st}" aria-label="${esc(STATE_LABEL[st])}">${icon(STATE_ICON[st])}</span>
+      <div class="nm">${esc(j.name)}</div>
+      <button class="btn sm act" type="button" data-open="${esc(j.id)}" aria-expanded="${open}">${open ? 'Hide tracks' : 'Tracks'}</button>
+      <div class="sub">
+        <span>${esc(STATE_LABEL[st])}</span>
+        <span class="fmt">${esc(j.format)}</span>
+        <span class="ok num">${j.downloaded} saved</span>
+        <span class="skip num">${j.skipped} skipped</span>
+        ${j.failed ? `<span class="pill fail num">${j.failed} failed</span>` : ''}
+      </div>
+    </div>
+    <div class="detail" id="det-${esc(j.id)}" ${open ? '' : 'hidden'}></div>`;
   }).join('');
-  target.querySelectorAll('button[data-cancel]').forEach(b =>
-    b.addEventListener('click', () => cancelJob(b.dataset.cancel)));
-  target.querySelectorAll('button[data-open]').forEach(b =>
-    b.addEventListener('click', () => toggleTracks(b.dataset.open)));
-  Object.keys(openJobs).forEach(id => paintDetail(id));
+  host.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => toggleTracks(b.dataset.open)));
+  // Re-attach any expanded detail views, which the rebuild just discarded.
+  Object.keys(openJobs).forEach(id => {
+    const st = openJobs[id];
+    if (st.list) { st.filter = st.list.filter; st.sort = st.list.sort; }
+    st.list = null;
+    paintDetail(id);
+  });
 }
 
 async function toggleTracks(id) {
-  if (openJobs[id]) { delete openJobs[id]; paintDetail(id); poll(); return; }
-  openJobs[id] = { events: null, filter: 'all', sort: { by:'status', desc:false } };
-  paintDetail(id);
+  if (openJobs[id]) { delete openJobs[id]; listSig.recent = null; renderRecent(lastData.recent || []); return; }
+  openJobs[id] = { events: null, list: null };
+  listSig.recent = null; renderRecent(lastData.recent || []);
   try {
     const r = await fetch('/api/job/' + encodeURIComponent(id));
     const data = await r.json();
     if (r.status === 401 && data.login) { location.href = '/login'; return; }
     if (openJobs[id]) openJobs[id].events = (data.job || {}).events || [];
-  } catch (e) {
-    if (openJobs[id]) openJobs[id].events = [];
-  }
+  } catch (e) { if (openJobs[id]) openJobs[id].events = []; }
   paintDetail(id);
 }
 
 function paintDetail(id) {
-  const host = $('det-' + id);
-  if (!host) return;
-  const st = openJobs[id];
-  if (!st) { host.innerHTML = ''; return; }
-  if (st.events === null) { host.innerHTML = '<div class="empty">Loading…</div>'; return; }
-  host.innerHTML = chipRow(countKinds(st.events), st.filter, 'rfilter')
-                 + trackTable(st.events, st.filter, st.sort);
-  host.querySelectorAll('[data-rfilter]').forEach(el =>
-    el.addEventListener('click', () => { st.filter = el.dataset.rfilter; paintDetail(id); }));
-  host.querySelectorAll('.tl th[data-sort]').forEach(el =>
-    el.addEventListener('click', () => {
-      const by = el.dataset.sort;
-      st.sort = { by, desc: st.sort.by === by ? !st.sort.desc : false };
-      paintDetail(id);
-    }));
+  const host = $('det-' + id), st = openJobs[id];
+  if (!host || !st) return;
+  host.hidden = false;
+  if (st.events === null) { host.innerHTML = `<div class="loading"><span class="spin"></span>Loading tracks…</div>`; return; }
+  if (!st.list) {
+    host.innerHTML = '';
+    // Failures first: that is what people open a finished job to look at.
+    st.list = new TrackList(host, { sort: st.sort || { by: 'status', desc: false } });
+    if (st.filter) st.list.filter = st.filter;
+  }
+  st.list.update(st.events);
 }
 
-/* ---------- update button ---------- */
+/* ------------------------------------------------------------ yt-dlp update */
 $('btn-update').addEventListener('click', async () => {
-  const b = $('btn-update');
-  b.disabled = true; b.textContent = 'Updating…';
+  const b = $('btn-update'), lbl = b.querySelector('.lbl');
+  b.disabled = true; b.classList.add('busy'); lbl.textContent = 'Checking…';
   try {
     const j = await api('/api/update-ytdlp');
     if (j.restart_required)
@@ -755,10 +1284,12 @@ $('btn-update').addEventListener('click', async () => {
         + (j.persisted ? '' : ' No writable /data volume, so this will be lost on rebuild.'), true);
     else flash(`Already current: yt-dlp ${j.running}.`, true);
   } catch (e) { flash(e.message, false); }
-  b.disabled = false; b.textContent = 'Update';
+  b.disabled = false; b.classList.remove('busy'); lbl.textContent = 'Check for update';
 });
 
-/* ---------- poll ---------- */
+/* ------------------------------------------------------------ poll */
+let lastData = { pending: [], recent: [] };
+
 async function refresh() {
   let d;
   try {
@@ -766,19 +1297,19 @@ async function refresh() {
     d = await r.json();
     if (r.status === 401 && d.login) { location.href = '/login'; return false; }
   } catch (e) { return false; }
+  lastData = d;
   $('signout').hidden = !d.auth_enabled;
-
-  $('ytdlp').textContent = d.ytdlp;
+  $('ytdlp').textContent = d.ytdlp || '…';
   $('appver').textContent = d.app_version || 'dev';
-  if (d.bitrate_notes && !Object.keys(NOTES).length) {
-    NOTES = d.bitrate_notes;
-    FMT_NOTES = d.format_notes || {};
-    renderOutput();
-  }
-  if (d.startup_warnings && d.startup_warnings.length && !d.current)
-    flash(d.startup_warnings.join(' | '), false);
 
-  // spotify panels
+  if (d.bitrate_notes && !Object.keys(NOTES).length) {
+    NOTES = d.bitrate_notes; FMT_NOTES = d.format_notes || {}; renderOutput();
+  }
+
+  const warns = d.startup_warnings || [];
+  $('warnbar').hidden = !warns.length;
+  if (warns.length) $('warnlist').innerHTML = warns.map(w => `<li>${esc(w)}</li>`).join('');
+
   const sp = d.spotify || {};
   $('sp-redirect').textContent = sp.redirect_uri || '';
   $('sp-setup').hidden = sp.configured;
@@ -787,48 +1318,35 @@ async function refresh() {
   spConnected = !!sp.connected;
   if (spConnected && !spLoaded) loadSpotify();
 
-  // queue
   renderCurrent(d.current);
-  renderList($('q-pending'), d.pending || [], { empty: 'Queue is empty.', cancel: true });
-  renderList($('q-recent'), d.recent || [], { empty: 'Nothing yet.', cancel: false });
+  renderPending(d.pending || []);
+  renderRecent(d.recent || []);
 
   const waiting = (d.pending || []).length;
   const n = waiting + (d.current ? 1 : 0);
   $('qbadge').hidden = n === 0;
   $('qbadge').textContent = n;
-  $('pill').textContent = d.current
-    ? `working · ${d.current.done}/${d.current.total}`
-    : (waiting ? `${waiting} waiting` : 'active');
-
-  return n > 0;   // something is running or queued
+  const s = $('status');
+  s.className = 'status ' + (d.current ? 'working' : waiting ? 'waiting' : '');
+  $('status-word').textContent = d.current ? 'Working' : (waiting ? `${waiting} waiting` : 'Ready');
+  $('status-num').textContent = d.current ? `${d.current.done}/${d.current.total}` : '';
+  $('status-num').hidden = !d.current;
+  return n > 0;
 }
 
-/* ---------- adaptive polling ----------
-   This used to be setInterval(poll, 1500): a request every 1.5s forever, even
-   with nothing running and even in a hidden tab, and overlapping requests
-   whenever the server was slower than the interval. Now it self-schedules —
-   fast only while a job is active, slow when idle, and stopped entirely while
-   the tab is hidden, catching up the moment it is shown again. */
-const POLL_ACTIVE = 1500;
-const POLL_IDLE = 20000;
-let pollTimer = null;
-let polling = false;
-
+/* Adaptive polling: fast only while a job is active, slow when idle, paused
+   while the tab is hidden and refreshed the moment it is shown again. */
+const POLL_ACTIVE = 1500, POLL_IDLE = 20000;
+let pollTimer = null, polling = false;
 async function poll() {
   clearTimeout(pollTimer);
-  if (polling) return;           // never stack requests
+  if (polling) return;
   polling = true;
   let active = false;
   try { active = await refresh(); } finally { polling = false; }
-  if (!document.hidden) {
-    pollTimer = setTimeout(poll, active ? POLL_ACTIVE : POLL_IDLE);
-  }
+  if (!document.hidden) pollTimer = setTimeout(poll, active ? POLL_ACTIVE : POLL_IDLE);
 }
-
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) clearTimeout(pollTimer);
-  else poll();                   // refresh immediately on return
-});
+document.addEventListener('visibilitychange', () => { if (document.hidden) clearTimeout(pollTimer); else poll(); });
 
 loadSettings();
 renderOutput();

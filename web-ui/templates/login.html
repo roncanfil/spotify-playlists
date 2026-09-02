@@ -1,50 +1,96 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Spotify Playlists</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Sign in · Spotify Playlists</title>
 <style>
   :root {
-    --bg:#f6f6f4; --panel:#fff; --ink:#1a1a19; --muted:#6b6b66;
-    --line:#e2e2dd; --accent:#2f6f4f; --accent-ink:#fff; --fail:#a3302a;
-    --radius:10px;
+    --bg:#f3f3f1; --surface:#ffffff; --surface-2:#f7f7f5; --ink:#161718; --ink-2:#4a4c51;
+    --muted:#797c83; --faint:#a4a7ad; --line:#e5e5e1; --line-2:#d3d4cf;
+    --accent:#168a46; --accent-hover:#127a3d; --accent-ink:#fff; --accent-ring:rgba(22,138,70,.28);
+    --fail:#c33a31; --fail-soft:rgba(195,58,49,.10);
+    --shadow:0 2px 6px rgba(20,20,20,.06), 0 24px 60px -28px rgba(20,20,20,.25);
+    color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg:#16171a; --panel:#1e2024; --ink:#e9e9e6; --muted:#9a9a94;
-      --line:#2e3136; --accent:#4f9d76; --accent-ink:#10231a; --fail:#e0736c;
+      --bg:#0e0f11; --surface:#17181b; --surface-2:#1d1e22; --ink:#ecedee; --ink-2:#b6b8bd;
+      --muted:#868990; --faint:#5e6168; --line:#26272b; --line-2:#34363b;
+      --accent:#2ecc6f; --accent-hover:#3fd97e; --accent-ink:#052a14; --accent-ring:rgba(46,204,111,.32);
+      --fail:#f0736b; --fail-soft:rgba(240,115,107,.13);
+      --shadow:0 2px 8px rgba(0,0,0,.35), 0 30px 80px -30px rgba(0,0,0,.8);
+      color-scheme: dark;
     }
   }
-  * { box-sizing:border-box; }
-  body { margin:0; min-height:100vh; display:flex; align-items:center;
-    justify-content:center; padding:24px; background:var(--bg); color:var(--ink);
-    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
-  .card { width:100%; max-width:340px; background:var(--panel);
-    border:1px solid var(--line); border-radius:var(--radius); padding:26px 24px; }
-  h1 { font-size:19px; margin:0 0 4px; letter-spacing:-.01em; }
-  p.sub { margin:0 0 18px; color:var(--muted); font-size:13.5px; }
-  label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
-  input[type=password] { width:100%; padding:10px 11px; font-size:15px;
-    color:var(--ink); background:var(--bg); border:1px solid var(--line);
-    border-radius:8px; }
-  input[type=password]:focus { outline:2px solid var(--accent); outline-offset:1px; }
-  button { width:100%; margin-top:14px; padding:10px; font-size:15px;
-    font-weight:500; cursor:pointer; color:var(--accent-ink);
-    background:var(--accent); border:0; border-radius:8px; }
-  .err { margin:14px 0 0; padding:9px 11px; border-radius:8px; font-size:13.5px;
-    color:var(--fail); border:1px solid var(--fail); background:transparent; }
+  *, *::before, *::after { box-sizing:border-box; }
+  body {
+    margin:0; min-height:100vh; min-height:100dvh; display:flex; align-items:center; justify-content:center;
+    padding:24px; background:var(--bg); color:var(--ink);
+    background-image:radial-gradient(ellipse 60% 50% at 50% -10%, rgba(30,215,96,.14), transparent 70%);
+    font:14.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .card {
+    width:100%; max-width:360px; background:var(--surface); border:1px solid var(--line);
+    border-radius:18px; padding:28px 26px 24px; box-shadow:var(--shadow);
+  }
+  .mark {
+    width:44px; height:44px; border-radius:13px; display:grid; place-items:center; margin-bottom:18px;
+    background:linear-gradient(140deg, #1ed760 0%, #14883f 100%); color:#03210f;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.18), 0 1px 2px rgba(0,0,0,.08);
+  }
+  .mark svg { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+  h1 { margin:0 0 4px; font-size:19px; font-weight:650; letter-spacing:-.015em; }
+  p.sub { margin:0 0 20px; color:var(--muted); font-size:14px; }
+  label { display:block; font-size:12.5px; font-weight:620; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:7px; }
+  .field { position:relative; }
+  .field svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); width:16px; height:16px;
+    fill:none; stroke:var(--muted); stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
+  input[type=password] {
+    width:100%; height:44px; padding:0 12px 0 38px; font:inherit; font-size:15px; color:var(--ink);
+    background:var(--surface); border:1px solid var(--line-2); border-radius:10px;
+    transition:border-color .12s, box-shadow .12s;
+  }
+  input[type=password]:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
+  button {
+    width:100%; height:44px; margin-top:14px; font:inherit; font-size:15px; font-weight:600; cursor:pointer;
+    color:var(--accent-ink); background:var(--accent); border:0; border-radius:10px; transition:background .12s, transform .08s;
+  }
+  button:hover { background:var(--accent-hover); }
+  button:active { transform:translateY(1px); }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .err {
+    display:flex; align-items:center; gap:8px; margin:14px 0 0; padding:10px 12px; border-radius:10px;
+    font-size:13.5px; color:var(--fail); background:var(--fail-soft);
+  }
+  .err svg { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 </style>
-
+</head>
+<body>
 <form class="card" method="post" action="/login">
+  <div class="mark" aria-hidden="true">
+    <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+  </div>
   <h1>Spotify Playlists</h1>
   <p class="sub">Enter the password to continue.</p>
 
   <label for="password">Password</label>
-  <!-- autofocus so it is ready to type, and the browser can offer a saved one -->
-  <input type="password" id="password" name="password" autofocus required
-         autocomplete="current-password">
+  <div class="field">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+    <input type="password" id="password" name="password" autofocus required autocomplete="current-password">
+  </div>
 
   <button type="submit">Sign in</button>
 
-  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+  {% if error %}
+  <p class="err" role="alert">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19z"/><path d="M12 9v5m0 3v.01" stroke-width="2.2"/></svg>
+    {{ error }}
+  </p>
+  {% endif %}
   <input type="hidden" name="next" value="{{ next_url }}">
 </form>
+</body>
+</html>

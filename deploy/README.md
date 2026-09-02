@@ -15,6 +15,16 @@ It uses no `${VARIABLE}` substitution and needs no `.env`, because the
 paste-a-file installers below cannot supply one. Every setting is a literal you
 edit in place.
 
+## A login page, if you want one
+
+Set `APP_PASSWORD` and the app serves a centred password page before anything
+else; leave it blank and the app is wide open. Only the password is checked,
+there is no username, and a **Sign out** link appears in the header. `/healthz`
+stays outside the gate so container healthchecks and uptime probes keep working
+without credentials.
+
+Set it if the app is reachable from anywhere but a LAN you trust.
+
 ## CasaOS / ZimaOS / Portainer / Dockge
 
 These import a single compose file and give you no `.env`, so
@@ -83,17 +93,66 @@ Nothing here needs privileged mode, host networking, or a specific kernel.
 docker compose pull && docker compose up -d
 ```
 
-In CasaOS, the app's update button does the same thing.
+Both halves are required. `pull` fetches the new image; `up -d` recreates the
+container from it.
 
-Most breakage does not need an update at all. yt-dlp is the piece YouTube keeps
-breaking, and `AUTO_UPDATE_YTDLP=1` reinstalls the latest into the mounted state
-volume on every boot — so **restarting the app** is the first thing to try, and
-usually the only thing.
+> **A restart does not update anything.** Neither does stopping and starting
+> the app in CasaOS, or `docker compose restart`. They all reuse the image
+> already on disk, so the app comes back byte-identical and it looks as though
+> the release did nothing. Only an explicit pull changes the image — in CasaOS
+> that means its **Update** action, not the power toggle.
+
+The same applies to editing settings: `docker compose restart` will *not* pick
+up a changed environment variable. `docker compose up -d` will, because it
+recreates the container.
+
+### Confirming which build is running
+
+```bash
+curl -s http://<host>:8765/healthz
+# {"ok":true,"version":"1.7.0"}
+```
+
+No login needed, so this works from anywhere and is the fastest way to tell a
+stale deploy from a real bug. The version also appears in the UI footer beside
+the yt-dlp version.
+
+If the version changed but the page looks unchanged, hard-refresh once (⌘⇧R or
+a private window). All of the front end's JavaScript is inline in the HTML;
+releases from 1.6.0 send `Cache-Control: no-store`, so this is only needed once
+to escape a page cached by an earlier build.
+
+### Finding the compose file on the NAS
+
+If CasaOS installed it and you would rather work in a shell:
+
+```bash
+cd "$(docker inspect playlist-downloader \
+  --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}')"
+```
+
+Prefer CasaOS's own settings UI for config changes, though — editing the file by
+hand can leave CasaOS's record out of sync with what is running.
+
+### Most breakage needs no update at all
+
+yt-dlp is the piece YouTube keeps breaking, and `AUTO_UPDATE_YTDLP=1`
+reinstalls the latest on every boot — so **restarting** is the first thing to
+try for failed downloads, and usually the only thing. That is the one job a
+restart *is* right for.
 
 ## Spotify
 
 Optional. Leave `SPOTIFY_CLIENT_ID` blank and the Playlists tab is hidden; the
 app still works by uploading CSVs exported from [Exportify](https://exportify.net).
+
+Spotify apps start in **Development Mode**, which limits what the Web API will
+return. Since their February 2026 API migration, that can mean playlists you
+merely follow are refused with a 403 while ones you created work fine. Their own
+algorithmic playlists — Discover Weekly, Daily Mix, Release Radar — have been
+off-limits to the API since late 2024 and will never work. If your own playlists
+download but followed ones do not, that is the account restriction rather than a
+bug here; a quota extension request on the Spotify dashboard is the only fix.
 
 Spotify's redirect-URI rule is the only fiddly part: **it must be HTTPS**, with
 a single exception — a loopback address may use plain HTTP. `localhost` is

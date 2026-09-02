@@ -61,26 +61,68 @@ internals and the Spotify redirect-URI constraint.
 
 ## ✨ What it does
 
-- **Spotify tab** — connect once, see every playlist with artwork and track
-  counts, click Download. No Exportify round-trip.
+- **Spotify tab** — connect once, then browse every playlist with artwork and
+  track counts, in a grid or a list, and hit **Save CSV** to queue it. No
+  Exportify round-trip.
 - **CSV tab** — drop an Exportify CSV instead, if you would rather not connect
   Spotify.
-- **Queue tab** — one job at a time, live progress, per-track source quality,
-  cancel.
+- **Queue tab** — one job at a time with live progress, filter chips for
+  Downloaded / Skipped / Failed, a dedicated list of failures with their
+  errors, and a per-track history for finished playlists that sorts failures
+  to the top.
 - **Settings tab** — MP3 (128/192/320 kbps) or M4A stream-copy, plus the yt-dlp
   updater.
+- **Optional password** — set `APP_PASSWORD` and the app shows a login page.
 
-Output is one folder per playlist. Tracks you already have are skipped, so
-re-runs only fetch what is missing. Files get full tags: title, artist, album,
-album artist, track number, year, genre, and the source YouTube URL.
+### What you get on disk
+
+One self-contained folder per playlist:
+
+```
+music/
+└── Lenox Ave/
+    ├── Lenox Ave.csv                 the playlist it came from
+    ├── Lenox Ave.m3u                 generated after every run
+    ├── Tycho - 01 - Sunrise.mp3
+    └── Bonobo - 02 - Café Solo.mp3
+```
+
+Tracks you already have are skipped, so re-runs only fetch what is missing.
+Files get full tags: title, artist, album, album artist, track number, year,
+genre, and the source YouTube URL. The `.m3u` is extended M3U with relative
+paths, so the folder stays playable if you move it.
 
 ## 🔧 When downloads start failing
 
-Expected, periodically — YouTube changes and yt-dlp catches up. Restart the
+Expected, periodically — YouTube changes and yt-dlp catches up. **Restart** the
 container (it reinstalls the latest yt-dlp on boot) or use the Settings tab's
 update button. This is the fix for almost every breakage; see
 [`cli/README.md`](cli/README.md) for the August 2026 SABR episode and how it was
 actually resolved.
+
+Restarting is *not* how you get a new version of this app, though — see below.
+
+## 🔄 Updating
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Both halves matter. `pull` fetches the image; `up -d` replaces the container
+with it. **A restart, or stopping and starting the app in CasaOS, does
+neither** — it reuses the image you already have, so nothing appears to change.
+
+Check which build is actually running, no login required:
+
+```bash
+curl -s http://<host>:8765/healthz
+# {"ok":true,"version":"1.7.0"}
+```
+
+The version also shows in the UI footer. If it changed but the page looks the
+same, hard-refresh once (⌘⇧R) — releases from 1.6.0 on send `Cache-Control:
+no-store`, so that is only needed when escaping a page cached by an older
+build.
 
 ## ⚖️ Legal notice
 

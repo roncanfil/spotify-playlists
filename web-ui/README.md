@@ -1,16 +1,22 @@
-# 🎵 Playlist Downloader — Web UI
+# 🎵 Spotify Playlists — Web UI
 
-Turns a Spotify/Exportify CSV into a folder of tagged MP3s. Runs as a Docker
-service so anyone on the network can use it from a browser with nothing
-installed.
+Turns a Spotify playlist or an Exportify CSV into a folder of tagged MP3s. Runs
+as a Docker service, so anyone on the network can use it from a browser with
+nothing installed.
 
 ## ✨ What it does
 
-- **Spotify tab** — connect your account once, see every playlist with artwork
-  and track counts, and hit Download. No Exportify round-trip.
-- **CSV tab** — upload or pick a CSV, exactly as before.
-- **Queue tab** — one job at a time, with live progress, per-track source
-  quality, and cancel.
+- **Spotify tab** — connect your account once, then browse every playlist with
+  artwork and track counts, in a grid or a list, and hit **Save CSV** to queue
+  it. No Exportify round-trip.
+- **CSV tab** — upload a CSV instead and hit **Process Playlist**.
+- **Queue tab** — one job at a time with live progress, filter chips for
+  Downloaded / Skipped / Failed, a dedicated list of failures with their errors,
+  and a per-track history for finished playlists that sorts failures first.
+- **Settings tab** — output format and the yt-dlp updater.
+
+The queue's track lists come straight from the per-track events each job
+records, so nothing extra is stored to support them.
 
 ## 🚀 Run it
 
@@ -136,6 +142,22 @@ any CSV you already have.
 Output is one subfolder per CSV, so `lenox.csv` writes to `<music mount>/lenox/`.
 Tracks that already exist are skipped, making re-runs incremental.
 
+### Development Mode limits
+
+New Spotify apps are in Development Mode, and since Spotify's February 2026 Web
+API migration that can mean playlists you merely *follow* are refused with a 403
+while ones you created work normally. Spotify's own algorithmic playlists —
+Discover Weekly, Daily Mix, Release Radar — have been off-limits to the API
+since late 2024 and will never work.
+
+If your own playlists download and followed ones do not, that is the account
+restriction, not a bug here. The only fix is a quota extension request on the
+Spotify dashboard.
+
+That migration also renamed the fields this client reads (`tracks` → `items`,
+and `/playlists/{id}/tracks` → `/playlists/{id}/items`). `spotify.py` accepts
+both shapes, so it works whichever an account is served.
+
 ## 🎚️ Bitrate
 
 `128`, `192` (default) or `320` kbps MP3. These are transcode targets, not
@@ -150,15 +172,21 @@ only ever meant ~4x the file size for identical sound. See
 ## 🏗️ How it fits together
 
 ```
-download.py    ← the engine: search, download, transcode, tag
+download.py    ← the engine: search, download, transcode, tag, write the .m3u
      ↑ imported by
-app.py         ← Flask API: start/cancel/poll, yt-dlp updater
+app.py         ← Flask API: auth, start/cancel/poll, yt-dlp updater
+spotify.py     ← Spotify Web API client (PKCE, no client secret)
 templates/     ← single-page UI, no CDN (works offline on a LAN)
 ```
 
-`process_playlist()` in `download.py` yields progress events; `app.py` serves
-them as JSON and the page polls for them. `download.py` also still runs
+`process_playlist()` in `download.py` yields progress events; `app.py` records
+them per job and serves them as JSON, and the page polls for them. Those same
+events back the queue's per-track status lists. `download.py` also still runs
 standalone as a deprecated CLI, so there is one implementation behind both.
+
+A playlist's output folder is derived from its CSV's own filename, which is why
+naming the CSV after its folder makes the tracks, the CSV and the `.m3u` all
+land together — and why there is no separate playlist directory to configure.
 
 Everything the image needs is in this folder, so the compose build context is
 `.` and stays around 76 KB. See [`../cli/README.md`](../cli/README.md) for what
@@ -178,8 +206,10 @@ this replaced and why.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/` | The UI |
-| `GET` | `/healthz` | Health check (unauthenticated, for Docker) |
-| `GET` | `/api/state` | Job progress, playlists, yt-dlp version |
+| `GET` | `/healthz` | Health check and app version (unauthenticated) |
+| `GET` | `/login` | Password page; only present when `APP_PASSWORD` is set |
+| `POST` | `/logout` | Clears the session |
+| `GET` | `/api/state` | Job progress, playlists, yt-dlp and app versions |
 | `GET` | `/api/job/<id>` | One job including its event log |
 | `POST` | `/api/start` | Queue a job (`bitrate`, plus `playlist` or `csv` upload) |
 | `POST` | `/api/cancel` | Cancel a job by `job_id` (running or waiting) |
@@ -194,6 +224,36 @@ this replaced and why.
 Jobs **queue instead of being rejected**, and run strictly one at a time:
 parallel YouTube extraction is the quickest way to get rate-limited, and two
 people using this at once should not be able to cause that.
+
+Every response carries `Cache-Control: no-store`. All the front-end JavaScript
+is inline in the HTML, so a cached page would keep running an older release's
+UI after an image update — indistinguishable, from the user's side, from the
+update having failed.
+
+Two 401s are deliberately different. The app's own "not signed in" reply carries
+`{"login": true}`, while `/api/spotify/playlists` returns a plain 401 for "not
+connected to Spotify". The front end only redirects to `/login` on the former,
+so an expired Spotify token cannot bounce you out of the app.
+
+### Authentication
+
+`APP_PASSWORD` gates the app behind `/login`, using a signed session cookie. The
+signing key is generated once and stored beside the Spotify token, so restarting
+the container does not sign everyone out. HTTP Basic is still accepted, which
+keeps `curl` and scripts working:
+
+```bash
+curl -u any:yourpassword http://host:8765/api/state
+```
+
+`SameSite=Lax`, not `Strict` — Spotify redirects the browser back to `/callback`
+from `accounts.spotify.com`, and `Strict` would drop the cookie on that hop.
+
+### Polling
+
+The UI polls `/api/state` every 1.5s while a job is running, every 20s when
+idle, and not at all while the browser tab is hidden, refreshing immediately
+when it becomes visible again.
 
 ## 🔧 When downloads start failing
 

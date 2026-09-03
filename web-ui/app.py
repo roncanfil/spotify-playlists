@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 import uuid
 from collections import deque
 
@@ -188,10 +189,25 @@ def require_auth(view):
 
 
 def safe_playlist_name(name):
-    """A filesystem-safe playlist name: the folder, the CSV stem and the .m3u."""
-    stem = re.sub(r"[^A-Za-z0-9._ &()-]", "_", (name or "playlist").strip())
-    stem = re.sub(r"\s+", " ", stem).strip(" .") or "playlist"
-    return stem[:80]
+    """
+    A filesystem-safe playlist name: the folder, the CSV stem and the .m3u.
+
+    Removes what a filesystem actually objects to, rather than everything
+    outside ASCII. The old allowlist turned "Mañanas alegre Sing-Along 🎵🎉"
+    into "Ma_anas alegre Sing-Along __", which is lossy for anyone whose
+    playlists are not in English, and leaves underscores where an emoji was.
+    Matches download.py's sanitize_filename, which was already Unicode-safe.
+    """
+    stem = unicodedata.normalize("NFC", str(name or ""))
+    # Reserved on Windows and over SMB, and "/" everywhere.
+    stem = re.sub(r'[<>:"/\\|?*]', "", stem)
+    # Control characters, which no filesystem wants in a name.
+    stem = "".join(c for c in stem if unicodedata.category(c) != "Cc")
+    stem = re.sub(r"\s+", " ", stem).strip()
+    # A leading dot would hide the folder and make list_playlists() skip it;
+    # trailing dots and spaces are invalid on Windows and over SMB.
+    stem = stem.strip(" .")[:80].strip(" .")
+    return stem or "playlist"
 
 
 def playlist_csv_path(stem):

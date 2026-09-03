@@ -188,10 +188,10 @@ def _ffmpeg_metadata_args(
         "-metadata",
         f"album={meta_album}",
         "-metadata",
-        f"track={meta_track_tag}",
-        "-metadata",
         f"comment=Original YouTube URL: {youtube_url}",
     ]
+    if meta_track_tag:
+        args.extend(["-metadata", f"track={meta_track_tag}"])
     if meta_album_artist:
         args.extend(["-metadata", f"album_artist={meta_album_artist}"])
     if meta_date:
@@ -247,7 +247,8 @@ def _write_tags_mutagen(
         tags.add(TALB(encoding=enc, text=meta_album))
         if meta_album_artist:
             tags.add(TPE2(encoding=enc, text=meta_album_artist))
-        tags.add(TRCK(encoding=enc, text=meta_track_tag))
+        if meta_track_tag:
+            tags.add(TRCK(encoding=enc, text=meta_track_tag))
         if meta_date:
             tags.add(TDRC(encoding=enc, text=meta_date))
         if meta_genre:
@@ -401,6 +402,11 @@ def parse_track_number_cell(raw):
         n = int(float(raw))
     except ValueError:
         return None, total
+    # Spotify returns track_number 0 for tracks it has no album position for,
+    # and our exporter writes that straight through. Treat it as absent rather
+    # than a real position, or it renders as "000".
+    if n <= 0:
+        return None, total
     return n, total
 
 
@@ -432,7 +438,14 @@ def build_track_display_and_tag(
         else:
             # Album track without total — store index only (avoid wrong N/playlist_len).
             tag = str(n)
+    elif track_num_col:
+        # The CSV numbers its tracks but this row's value is unusable. Filling
+        # in the playlist position would sit a positional number among album
+        # numbers, so leave it out of both the filename and the tag.
+        return "", ""
     else:
+        # No track-number column at all, so playlist order is the only
+        # ordering there is.
         n = playlist_index
         tag = f"{n}/{playlist_len}"
 
@@ -480,8 +493,12 @@ def sanitize_filename(filename):
     return re.sub(r'[<>:"/\\|?*]', '', filename)
 
 def output_basename(artist, track_padded, track_title):
-    """Filesystem stem: artist - track number - track name"""
-    return sanitize_filename(f"{artist} - {track_padded} - {track_title}")
+    """
+    Filesystem stem: "artist - NN - title", or "artist - title" when there is
+    no track number, rather than padding a missing one to "000".
+    """
+    parts = [artist, track_padded, track_title] if track_padded else [artist, track_title]
+    return sanitize_filename(" - ".join(parts))
 
 
 def _track_seconds(path):

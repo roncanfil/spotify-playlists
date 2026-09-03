@@ -444,6 +444,12 @@ class SpotifyClient:
         rows = self.playlist_rows(playlist_id, with_genres=with_genres)
         if not rows:
             raise SpotifyError("That playlist has no downloadable tracks.")
+        # Create the folder only once there is something to put in it. The
+        # caller used to make it first, which left an empty directory in the
+        # user's music library every time Spotify refused the playlist.
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8", newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS, quoting=csv.QUOTE_ALL)

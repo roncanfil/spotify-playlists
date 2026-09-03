@@ -787,7 +787,8 @@ def spotify_download():
     try:
         name = request.form.get("name") or spotify.playlist_name(playlist_id)
         csv_path = playlist_csv_path(safe_playlist_name(name))
-        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+        # write_playlist_csv creates the folder itself, after the fetch
+        # succeeds, so a refused playlist leaves nothing behind.
         count = spotify.write_playlist_csv(playlist_id, csv_path)
     except sp.SpotifyError as e:
         return jsonify({"error": str(e)}), 400

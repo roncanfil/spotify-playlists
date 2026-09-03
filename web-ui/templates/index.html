@@ -210,6 +210,10 @@
   .msg.good { background:var(--ok-soft); color:var(--ok); }
   .msg.err  { background:var(--fail-soft); color:var(--fail); }
   @media (prefers-color-scheme: dark) { .msg .x:hover { background:rgba(255,255,255,.08); } }
+  /* Must come after the .msg rule above, not in the earlier 900px block:
+     same specificity, so whichever is later wins. Keeps the message text
+     aligned with the app name instead of 12px to its left. */
+  @media (min-width: 900px) { .msg { padding-left:28px; padding-right:28px; } }
 
   /* ------------------------------------------------------------ controls */
   .btn {

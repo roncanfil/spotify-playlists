@@ -191,9 +191,14 @@
   .warnbar ul { margin:0; padding-left:16px; }
 
   /* message bar */
+  /* Lives inside .chrome, which is sticky, so a result stays visible while
+     the user is scrolled down a long playlist list. Full width and square,
+     because it is a bar now rather than a card in the page flow. */
   .msg {
-    display:none; align-items:flex-start; gap:10px; padding:10px 12px 10px 14px; margin-bottom:14px;
-    border-radius:var(--r-md); font-size:13.5px; line-height:1.45;
+    display:none; align-items:flex-start; gap:10px;
+    padding:10px max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
+    border-top:1px solid var(--line); border-radius:0;
+    font-size:13.5px; line-height:1.45;
     animation:fade .2s ease-out;
   }
   .msg.show { display:flex; }
@@ -549,18 +554,18 @@
     <button class="tab" role="tab" data-tab="queue" aria-selected="false" aria-controls="view-queue">Queue<span class="count" id="qbadge" hidden>0</span></button>
     <button class="tab settings" role="tab" data-tab="settings" aria-selected="false" aria-controls="view-settings"><svg class="i"><use href="#i-gear"/></svg>Settings</button>
   </nav>
+
+  <div class="msg" id="msg" role="status" aria-live="polite">
+    <svg class="i" id="msg-icon"><use href="#i-check"/></svg>
+    <span class="txt" id="msg-text"></span>
+    <button class="x" id="msg-close" aria-label="Dismiss"><svg class="i"><use href="#i-x"/></svg></button>
+  </div>
 </div>
 
 <main>
   <div class="warnbar" id="warnbar" hidden>
     <svg class="i"><use href="#i-warn"/></svg>
     <div><b>Storage problem.</b> Some paths are not writable, so jobs may fail.<ul id="warnlist"></ul></div>
-  </div>
-
-  <div class="msg" id="msg" role="status" aria-live="polite">
-    <svg class="i" id="msg-icon"><use href="#i-check"/></svg>
-    <span class="txt" id="msg-text"></span>
-    <button class="x" id="msg-close" aria-label="Dismiss"><svg class="i"><use href="#i-x"/></svg></button>
   </div>
 
   <!-- ============================================================ SPOTIFY -->

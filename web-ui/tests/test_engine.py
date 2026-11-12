@@ -341,3 +341,18 @@ def test_youtube_without_a_length_takes_the_first_result(tmp_path, audio, monkey
     monkeypatch.setattr(core.yt_dlp, "YoutubeDL", FakeYDL)
     (done,) = of(run(csv_path, tmp_path, None), "track_done")
     assert FakeYDL.searches == ["ytsearch1:Enya - Orinoco Flow"]
+
+
+@needs_ffmpeg
+def test_a_job_can_name_its_folder_and_skip_the_playlist_file(playlist, tmp_path, audio, monkeypatch):
+    FakeYDL.fixture, FakeYDL.searches = audio["opus_webm"], []
+    monkeypatch.setattr(core.yt_dlp, "YoutubeDL", FakeYDL)
+    out = tmp_path / "music" / "Enya"
+    events = list(core.process_playlist(
+        playlist, 192, "mp3", output_root=str(tmp_path / "unused"), sources=None,
+        output_dir=str(out), write_playlist=False,
+    ))
+    (done,) = of(events, "track_done")
+    assert os.path.dirname(done["path"]) == str(out)
+    assert os.listdir(out) == ["Enya - 02 - Orinoco Flow.mp3"]
+    assert of(events, "summary")[0]["playlist_file"] is None

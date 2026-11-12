@@ -1005,6 +1005,8 @@ def process_playlist(
     output_root=".",
     should_cancel=None,
     sources=None,
+    output_dir=None,
+    write_playlist=True,
 ):
     """
     Run one playlist, yielding progress events.
@@ -1017,13 +1019,18 @@ def process_playlist(
     when None); see sources.py for their shape. track_done names the source
     that supplied the file, and both track_done and track_error carry
     "attempts": the sources that failed before, each with its reason.
+
+    The tracks go in output_root/<CSV name> unless `output_dir` says where
+    (an album's Artist/Album folder, a single's artist folder). With
+    write_playlist False no .m3u is written: a single song needs none, and in
+    an artist's folder it would only pile up.
     """
     bitrate = normalize_bitrate(bitrate)
     audio_format = normalize_audio_format(audio_format)
     columns, rows = read_playlist_csv(csv_file)
     cols, warnings = resolve_columns(columns)
 
-    output_dir = os.path.join(output_root, get_output_dir(csv_file))
+    output_dir = output_dir or os.path.join(output_root, get_output_dir(csv_file))
     os.makedirs(output_dir, exist_ok=True)
     ext = audio_format
 
@@ -1185,9 +1192,10 @@ def process_playlist(
 
     playlist_file = None
     try:
-        playlist_file = write_m3u(
-            output_dir, get_output_dir(csv_file), m3u_entries
-        )
+        if write_playlist:
+            playlist_file = write_m3u(
+                output_dir, get_output_dir(csv_file), m3u_entries
+            )
     except OSError as e:
         # Never fail a finished download over the playlist file.
         yield {"type": "warning", "message": f"Could not write the .m3u: {e}"}

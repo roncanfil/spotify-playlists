@@ -2,9 +2,14 @@
 Web UI for Spotify Playlists.
 
 Wraps download.process_playlist so the browser and the standalone script run
-identical logic. Playlists come either from an uploaded CSV or straight from
-Spotify; both paths end up as one folder under MUSIC_DIR holding that
-playlist's CSV, its tracks and its .m3u, plus a job on one serial queue.
+identical logic. Music comes from an uploaded CSV, a playlist of the connected
+Spotify account, or a pasted Spotify link; every path ends up as a CSV and a
+job on one serial queue. Where the tracks land:
+
+    playlist   MUSIC_DIR/<Playlist>/      with its CSV and .m3u
+    album      MUSIC_DIR/<Artist>/<Album>/ with its CSV and .m3u
+    song       MUSIC_DIR/<Artist>/         just the file; its CSV is kept in
+                                           the state folder
 """
 
 import functools
@@ -30,6 +35,7 @@ import download as core
 import slskd
 import slskd_config
 import spotify as sp
+import spotify_link
 from sources import P2PSource
 
 app = Flask(__name__)
@@ -215,22 +221,27 @@ def safe_playlist_name(name):
 
 
 def playlist_csv_path(stem):
-    """<MUSIC_DIR>/<stem>/<stem>.csv -- the CSV lives with the tracks it made.
+    """<MUSIC_DIR>/<stem>/<name>.csv -- the CSV lives with the tracks it made.
 
-    download.py derives the output folder from the CSV's own filename, so
-    naming the CSV after its folder makes the tracks land beside it.
+    `stem` is a folder under MUSIC_DIR: "Mix" for a playlist, "Artist/Album"
+    for an album. The CSV is named after the last part, which is also what
+    the .m3u is called.
     """
-    return os.path.join(MUSIC_DIR, stem, f"{stem}.csv")
+    return os.path.join(MUSIC_DIR, *stem.split("/"), f"{stem.split('/')[-1]}.csv")
 
 
 class Job:
     """One playlist run. Its own lock; read by polling requests."""
 
     def __init__(self, csv_path, bitrate, audio_format=core.DEFAULT_FORMAT,
-                 source="upload"):
+                 source="upload", name=None, output_dir=None, write_playlist=True):
         self.id = uuid.uuid4().hex[:12]
         self.csv_path = csv_path
-        self.name = os.path.splitext(os.path.basename(csv_path))[0]
+        self.name = name or os.path.splitext(os.path.basename(csv_path))[0]
+        # The CSV's own folder unless told otherwise (a song's CSV is kept
+        # out of the music library).
+        self.target_dir = output_dir or os.path.dirname(csv_path)
+        self.write_playlist = write_playlist
         self.bitrate = bitrate
         self.audio_format = audio_format
         self.source = source
@@ -313,6 +324,8 @@ class Job:
                 # Read when the job starts, so a change in Settings applies to
                 # the next job rather than reshuffling one mid-run.
                 sources=ordered_sources(),
+                output_dir=self.target_dir,
+                write_playlist=self.write_playlist,
             ):
                 self._handle(ev)
             if self.downloaded:
@@ -656,21 +669,30 @@ def ytdlp_version():
         return "unknown"
 
 
+def _subfolders(path):
+    try:
+        return [n for n in os.listdir(path)
+                if not n.startswith(".") and os.path.isdir(os.path.join(path, n))]
+    except OSError:
+        return []
+
+
 def list_playlists():
-    """Playlist folders under MUSIC_DIR that contain their own <name>.csv.
+    """
+    Folders under MUSIC_DIR that hold their own <name>.csv: playlists
+    ("Mix") and, one level down, albums ("Artist/Album").
 
     Skips dot-prefixed names so our own state folder, and anything else
     hidden, never shows up as a playlist.
     """
-    try:
-        entries = os.listdir(MUSIC_DIR)
-    except OSError:
-        return []
-    return sorted(
-        name for name in entries
-        if not name.startswith(".")
-        and os.path.isfile(os.path.join(MUSIC_DIR, name, f"{name}.csv"))
-    )
+    found = []
+    for name in _subfolders(MUSIC_DIR):
+        if os.path.isfile(playlist_csv_path(name)):
+            found.append(name)
+        for sub in _subfolders(os.path.join(MUSIC_DIR, name)):
+            if os.path.isfile(playlist_csv_path(f"{name}/{sub}")):
+                found.append(f"{name}/{sub}")
+    return sorted(found)
 
 
 # ---------------------------------------------------------------- pages
@@ -1116,6 +1138,114 @@ def spotify_download():
             "csv": os.path.basename(csv_path),
         }
     )
+
+
+# ---------------------------------------------------------------- pasted links
+
+# A song's CSV: kept out of the music folder, which holds only music.
+LINKS_DIR = os.path.join(STATE_DIR, "links")
+# How long a link read for its preview is reused when Download is pressed.
+LINK_CACHE_TTL = 600
+_link_cache = {}
+_link_lock = threading.Lock()
+
+
+def read_link(text):
+    """The Collection for pasted text, from the cache when it is fresh."""
+    link = spotify_link.parse(text)
+    now = time.time()
+    with _link_lock:
+        hit = _link_cache.get(link.uri)
+        if hit and now - hit[0] < LINK_CACHE_TTL:
+            return hit[1]
+    col = spotify_link.read(link)
+    with _link_lock:
+        for uri in [u for u, (t, _) in _link_cache.items() if now - t >= LINK_CACHE_TTL]:
+            del _link_cache[uri]
+        _link_cache[link.uri] = (now, col)
+    return col
+
+
+def link_target(col):
+    """
+    Where a link's tracks go: {"csv", "folder" (relative to MUSIC_DIR),
+    "output_dir", "write_playlist", "name" (for the queue)}.
+    """
+    if col.kind == "playlist":
+        stem = safe_playlist_name(col.name)
+        return {"csv": playlist_csv_path(stem), "folder": stem,
+                "output_dir": os.path.join(MUSIC_DIR, stem),
+                "write_playlist": True, "name": col.name}
+    # Albums and songs file under their first artist, so a song by
+    # "Future, Drake" sits with Future's other music.
+    artist = safe_playlist_name(col.artist or "Unknown artist")
+    if col.kind == "album":
+        album = safe_playlist_name(col.name)
+        folder = f"{artist}/{album}"
+        return {"csv": playlist_csv_path(folder), "folder": folder,
+                "output_dir": os.path.join(MUSIC_DIR, artist, album),
+                "write_playlist": True, "name": f"{col.artist} \u2013 {col.name}"}
+    return {"csv": os.path.join(LINKS_DIR, f"{col.id}.csv"), "folder": artist,
+            "output_dir": os.path.join(MUSIC_DIR, artist),
+            "write_playlist": False, "name": f"{col.artist} \u2013 {col.name}"}
+
+
+def _link_error(e):
+    if isinstance(e, spotify_link.LinkError):
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"error": f"Could not read the link: {e}"}), 502
+
+
+@app.post("/api/link/preview")
+@require_auth
+def api_link_preview():
+    try:
+        col = read_link(request.form.get("link", ""))
+    except Exception as e:
+        return _link_error(e)
+    target = link_target(col)
+    return jsonify({
+        "kind": col.kind,
+        "name": col.name,
+        "artist": col.artist,
+        "image": col.image,
+        "tracks": len(col.rows),
+        "total": col.total,
+        "truncated": col.truncated,
+        "folder": target["folder"],
+        "sample": [
+            {"artist": r.get("Artist Name(s)", ""), "title": r.get("Track Name", ""),
+             "ms": int(r.get("Track Duration (ms)") or 0)}
+            for r in col.rows[:5]
+        ],
+    })
+
+
+@app.post("/api/link/download")
+@require_auth
+def api_link_download():
+    try:
+        bitrate, audio_format = _parse_output()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    try:
+        col = read_link(request.form.get("link", ""))
+    except Exception as e:
+        return _link_error(e)
+    target = link_target(col)
+    try:
+        spotify_link.write_csv(col, target["csv"])
+    except OSError as e:
+        return jsonify({"error": f"Could not write the CSV: {e}"}), 500
+    job = Job(target["csv"], bitrate, audio_format, source="link", name=target["name"],
+              output_dir=target["output_dir"], write_playlist=target["write_playlist"])
+    position = queue.add(job)
+    return jsonify({
+        "job": job.snapshot(with_events=False),
+        "position": position,
+        "tracks": len(col.rows),
+        "folder": target["folder"],
+    })
 
 
 if __name__ == "__main__":

@@ -1,14 +1,16 @@
 # Spotify Playlists, web UI
 
-Turns a Spotify playlist or an Exportify CSV into a folder of tagged MP3s. Runs
+Turns a Spotify playlist, album or song, or an Exportify CSV, into a folder of
+tagged MP3s. Runs
 as a Docker service, so anyone on the network can use it from a browser with
 nothing installed. Audio comes from Soulseek first when its optional sidecar is
 set up, and from YouTube otherwise.
 
 ## What it does
 
-- Spotify tab: connect your account once, browse playlists with artwork and
-  track counts as a grid or a list, and hit Save CSV to queue one.
+- Spotify tab: paste a playlist, album or song link, check what it found, and
+  hit Download; no account needed. Below it, optionally, connect your account
+  once to browse your own playlists as a grid or a list and hit Save CSV.
 - CSV tab: upload a CSV instead and hit Process Playlist.
 - Queue tab: one job at a time with live progress, filters for Saved, Skipped
   and Failed, a separate list of failures with their errors, and a per-track
@@ -92,14 +94,28 @@ music/
 ├── .spotify-playlists/
 │   ├── spotify_token.json                so you connect Spotify only once
 │   ├── settings.json                     source order, and whether setup ran
-│   └── slskd/                            slskd's settings, database, downloads
-│       └── slskd.yml                     written by the app; owner-only
-└── Lenox Ave/
-    ├── Lenox Ave.csv                     the playlist it came from
-    ├── Lenox Ave.m3u                     generated after each run
-    ├── Tycho - 01 - Sunrise.mp3
-    └── Bonobo - 02 - Café Solo.mp3
+│   ├── slskd/                            slskd's settings, database, downloads
+│   │   └── slskd.yml                     written by the app; owner-only
+│   └── links/                            CSVs of songs pasted on their own
+├── Lenox Ave/                            a playlist
+│   ├── Lenox Ave.csv                     the playlist it came from
+│   ├── Lenox Ave.m3u                     generated after each run
+│   ├── Tycho - 01 - Sunrise.mp3
+│   └── Bonobo - 02 - Café Solo.mp3
+└── Daft Punk/                            an artist
+    ├── Daft Punk - Get Lucky.mp3         a song, pasted as a link
+    └── Random Access Memories/           an album, pasted as a link
+        ├── Random Access Memories.csv
+        ├── Random Access Memories.m3u
+        └── Daft Punk - 01 - Give Life Back to Music.mp3
 ```
+
+Playlists are numbered by their position in the playlist, albums by their own
+track numbers. A song pasted on its own is named `Artist - Title` with no
+number and gets no `.m3u`, which would only pile up in the artist's folder. Its
+CSV is kept in the hidden state folder so the artist's folder holds only music.
+Albums and songs file under their first artist, so a song by "Future, Drake"
+sits with Future's other music.
 
 The Spotify refresh token is the only thing that has to outlive a container, so
 it sits in a hidden folder here rather than in a second volume. It is
@@ -116,9 +132,33 @@ resolves. It is rewritten at the end of every run from the tracks actually on
 disk, so a cancelled or partly failed run still leaves something valid. Tracks
 skipped because you already had them are included.
 
+## Spotify links
+
+Pasting a link needs no account and no setup. `spotify_link.py` reads the two
+public pages any browser gets for that link, with no token and no API call:
+
+- `open.spotify.com/<kind>/<id>`, which Spotify serves to a non-browser client
+  as a rendered page. For an album or a song it carries everything: names,
+  artists, track and disc numbers, lengths, release date. For a playlist it
+  lists only the first 30 songs.
+- `open.spotify.com/embed/<kind>/<id>`, the embeddable player, which lists up
+  to 100 songs of a playlist with their lengths but no album.
+
+So a link reads a playlist's first 100 songs, with album names for the first
+30. When a playlist is longer the preview says so; connect your account, or use
+a CSV, for the rest. Private playlists cannot be read from a link at all.
+Shortened `spotify.link` addresses are refused with a note to open them first.
+The link becomes a CSV in the same layout as the account export, so the rest
+of the app treats it like any other playlist. If Spotify changes those pages,
+reading a link fails with a message saying so rather than returning half a
+playlist.
+
+The preview is kept for ten minutes, so pressing Download does not fetch the
+pages again.
+
 ## Spotify setup
 
-Optional; the CSV tab works without it. Create a free app at
+Optional; links and the CSV tab work without it. Create a free app at
 [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard), tick
 Web API, register the redirect URI exactly, and put the Client ID in the compose
 file. No client secret is needed, since the app uses Authorization Code with
@@ -206,6 +246,7 @@ sources.py     the source interface, and the P2P candidate loop: rank, try,
 match.py       which Soulseek file is the track; ported from spotseek (MIT)
 slskd.py       Soulseek through slskd's HTTP API, with the search limiter
 slskd_config.py  slskd's settings file: API key, account, sharing
+spotify_link.py  pasted Spotify links, read from the public pages
      ^ imported by
 app.py         Flask API: auth, start/cancel/poll, source order, yt-dlp updater
 spotify.py     Spotify Web API client (PKCE, no client secret)
@@ -224,9 +265,17 @@ them per job and serves them as JSON, and the page polls for them. Those same
 events back the queue's per-track status lists. `download.py` also still runs
 standalone as a deprecated CLI, so one implementation sits behind both.
 
-A playlist's output folder is derived from its CSV's own filename. That is why
-naming the CSV after its folder makes the tracks, the CSV and the `.m3u` land
-together, and why there is no separate playlist directory to configure.
+A job's tracks land in its CSV's own folder, and the `.m3u` is named after the
+CSV. That is why naming the CSV after its folder makes the tracks, the CSV and
+the `.m3u` land together, and why there is no separate playlist directory to
+configure. A song pasted on its own is the exception: its job names the
+artist's folder and skips the `.m3u`.
+
+With Spotify's length known, YouTube is searched for eight results without
+downloading, and the first within 10 seconds of it that is not a live, cover
+or remix version (when the title is not one) is downloaded. The file's own
+length is checked again before encoding. Without a length it takes the first
+result, as it always did.
 
 Everything the image needs is in this folder, so the compose build context is
 `.` and stays small. See [`../cli/README.md`](../cli/README.md) for what this
@@ -256,7 +305,9 @@ replaced and why.
 | `POST` | `/logout` | Clears the session |
 | `GET` | `/api/state` | Job progress, playlists, yt-dlp and app versions, and `sources`: the order and each source's status |
 | `GET` | `/api/job/<id>` | One job including its event log |
-| `POST` | `/api/start` | Queue a job (`bitrate`, plus `playlist` or `csv` upload) |
+| `POST` | `/api/start` | Queue a job (`bitrate`, plus `playlist` or `csv` upload); `playlist` is a folder from `playlists`, such as `Mix` or `Artist/Album` |
+| `POST` | `/api/link/preview` | Read a pasted Spotify link (`link`): what it is, how many songs, where it will be saved; 400 with the reason for a link that cannot be read |
+| `POST` | `/api/link/download` | Queue a pasted link (`link`, `bitrate`, `format`) |
 | `POST` | `/api/cancel` | Cancel a job by `job_id`, running or waiting |
 | `POST` | `/api/cancel-all` | Drop every waiting job, leaving the running one |
 | `POST` | `/api/update-ytdlp` | Upgrade yt-dlp into the state volume |

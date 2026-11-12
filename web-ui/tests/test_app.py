@@ -276,3 +276,94 @@ def test_queue_rows_carry_their_source_and_jobs_count_by_source():
         ("YouTube", "opus 127 kbps (audio-only, format 251) - Soulseek missed: no file matched"),
     ]
     assert j.snapshot()["by_source"] == {"Soulseek": 1, "YouTube": 1}
+
+
+# ---------------------------------------------------------------- pasted links
+
+import spotify_link  # noqa: E402
+
+
+def collection(kind, name="Random Access Memories", artist="Daft Punk", n=2, total=None):
+    rows = [{"Track Name": f"Song {i}", "Artist Name(s)": artist, "Track Number": str(i),
+             "Track Duration (ms)": "200000"} for i in range(1, n + 1)]
+    cols = list(spotify_link.CSV_COLUMNS)
+    if kind == "playlist":
+        cols = [c for c in cols if c != "Track Number"]
+    return spotify_link.Collection(kind, "abcdefghijklmnopqrstuv", name, artist, rows,
+                                   total or n, n, columns=cols, image="img")
+
+
+@pytest.fixture
+def links(monkeypatch):
+    """Serves a Collection per link kind and counts the reads."""
+    served = {"reads": 0, "col": None}
+
+    def read(link, session=None):
+        served["reads"] += 1
+        return served["col"]
+
+    monkeypatch.setattr(webapp.spotify_link, "read", read)
+    webapp._link_cache.clear()
+    return served
+
+
+ALBUM_URL = "https://open.spotify.com/album/abcdefghijklmnopqrstuv"
+
+
+def test_a_link_preview_says_what_and_where(client, links):
+    links["col"] = collection("album")
+    j = client.post("/api/link/preview", data={"link": ALBUM_URL}).get_json()
+    assert (j["kind"], j["name"], j["artist"], j["tracks"], j["truncated"]) == (
+        "album", "Random Access Memories", "Daft Punk", 2, False)
+    assert j["folder"] == "Daft Punk/Random Access Memories"
+    assert j["sample"][0] == {"artist": "Daft Punk", "title": "Song 1", "ms": 200000}
+
+
+def test_a_bad_link_is_a_400_with_the_reason(client, links):
+    r = client.post("/api/link/preview", data={"link": "https://open.spotify.com/artist/abcdefghijklmnopqrstuv"})
+    assert r.status_code == 400 and "artist" in r.get_json()["error"]
+    assert links["reads"] == 0
+
+
+def test_downloading_an_album_reuses_the_preview_and_files_it_under_the_artist(client, links, monkeypatch):
+    added = []
+    monkeypatch.setattr(webapp.queue, "add", lambda job: added.append(job) or 1)
+    links["col"] = collection("album")
+    client.post("/api/link/preview", data={"link": ALBUM_URL})
+    r = client.post("/api/link/download", data={"link": ALBUM_URL + "?si=x", "bitrate": "320", "format": "mp3"})
+    assert r.status_code == 200, r.get_json()
+    assert links["reads"] == 1
+    (job,) = added
+    folder = os.path.join(_MUSIC, "Daft Punk", "Random Access Memories")
+    assert job.csv_path == os.path.join(folder, "Random Access Memories.csv")
+    assert (job.target_dir, job.write_playlist, job.bitrate) == (folder, True, 320)
+    assert job.name == "Daft Punk \u2013 Random Access Memories"
+    assert os.path.isfile(job.csv_path)
+    # It can be run again from the saved list.
+    assert "Daft Punk/Random Access Memories" in webapp.list_playlists()
+
+
+def test_a_song_goes_in_the_artist_folder_without_a_playlist_file(links):
+    links["col"] = collection("track", name="Ya Hit", artist="Future", n=1)
+    t = webapp.link_target(links["col"])
+    assert t["output_dir"] == os.path.join(_MUSIC, "Future")
+    assert t["write_playlist"] is False
+    # Its CSV stays out of the music library.
+    assert t["csv"].startswith(webapp.LINKS_DIR)
+
+
+def test_a_playlist_link_goes_where_an_account_playlist_would(links):
+    t = webapp.link_target(collection("playlist", name="Mañanas: alegre", artist="Spotify"))
+    assert t["folder"] == "Mañanas alegre"
+    assert t["csv"] == webapp.playlist_csv_path("Mañanas alegre")
+
+
+def test_saved_list_finds_playlists_and_albums_but_not_plain_folders():
+    for rel in ("Mix", "Artist/Album"):
+        path = webapp.playlist_csv_path(rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "w").close()
+    os.makedirs(os.path.join(_MUSIC, "Artist", "Loose"), exist_ok=True)
+    found = webapp.list_playlists()
+    assert "Mix" in found and "Artist/Album" in found
+    assert "Artist" not in found and "Artist/Loose" not in found

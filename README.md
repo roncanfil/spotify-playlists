@@ -1,6 +1,7 @@
 # Spotify playlists to MP3
 
-Takes a Spotify playlist and produces a folder of tagged MP3s. The audio comes
+Takes a Spotify playlist, album or song and produces a folder of tagged MP3s.
+Paste a Spotify link, connect your account, or upload a CSV. The audio comes
 from Soulseek, for real 320 kbps and lossless sources, and from YouTube, which
 needs no account. A setup screen on first visit asks which to try first; the
 other fills in whatever the first cannot find.
@@ -9,7 +10,7 @@ other fills in whatever the first cannot find.
 
 | Folder | What it is |
 |---|---|
-| [`web-ui/`](web-ui) | The app. A Dockerised web UI: connect Spotify, browse playlists, queue jobs. Start here. |
+| [`web-ui/`](web-ui) | The app. A Dockerised web UI: paste Spotify links or browse your playlists, queue jobs. Start here. |
 | [`deploy/`](deploy) | Deployment guide: CasaOS, Proxmox, updating, publishing. The compose file itself lives in `web-ui/`. |
 | [`cli/`](cli) | Historical. The original command-line script, kept as a record of why the project moved to a web UI. Not maintained. |
 
@@ -49,8 +50,10 @@ the Spotify redirect URI.
 
 ## What it does
 
-- Spotify tab: connect once, browse playlists with artwork and track counts as
-  a grid or a list, and hit Save CSV to queue one.
+- Spotify tab: paste a link to a playlist, an album or a song and hit
+  Download. No Spotify account needed; a link reads up to the first 100 songs
+  of a playlist. Or connect your account once to browse your own playlists,
+  of any length, as a grid or a list.
 - CSV tab: upload an Exportify CSV instead, if you would rather not connect
   Spotify.
 - Queue tab: one job at a time with live progress, filters for Saved, Skipped
@@ -67,19 +70,28 @@ the Spotify redirect URI.
 
 ### What you get on disk
 
-One self-contained folder per playlist:
+One self-contained folder per playlist, albums under their artist, and songs
+pasted on their own in the artist's folder:
 
 ```
 music/
-└── Lenox Ave/
-    ├── Lenox Ave.csv                 the playlist it came from
-    ├── Lenox Ave.m3u                 generated after every run
-    ├── Tycho - 01 - Sunrise.mp3
-    └── Bonobo - 02 - Café Solo.mp3
+├── Lenox Ave/                        a playlist
+│   ├── Lenox Ave.csv                 the playlist it came from
+│   ├── Lenox Ave.m3u                 generated after every run
+│   ├── Tycho - 01 - Sunrise.mp3
+│   └── Bonobo - 02 - Café Solo.mp3
+└── Daft Punk/
+    ├── Daft Punk - Get Lucky.mp3     a song pasted on its own
+    └── Random Access Memories/       an album
+        ├── Random Access Memories.csv
+        ├── Random Access Memories.m3u
+        └── Daft Punk - 01 - Give Life Back to Music.mp3
 ```
 
 Tracks you already have are skipped, so re-runs only fetch what is missing.
-Files get full tags: title, artist, album, album artist, track number, year,
+Every file is checked against Spotify's length (within 10 seconds) from
+either source, so a music video with a long intro or a live take is passed
+over. Files get full tags: title, artist, album, album artist, track number, year,
 genre, and a comment saying where the audio came from (the YouTube URL, or the
 Soulseek peer). The `.m3u` uses relative paths, so the
 folder stays playable if you move it.

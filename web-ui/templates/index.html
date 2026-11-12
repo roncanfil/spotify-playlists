@@ -324,6 +324,31 @@
   .grid.list .card .art { width:44px; height:44px; border-radius:6px; }
   .grid.list .card .nm { flex-wrap:wrap; }
   .grid.list .card .nm .t, .grid.list .card .sub { white-space:normal; }
+  /* pasted link */
+  .linkrow { display:flex; gap:8px; }
+  .linkrow .field { flex:1; min-width:0; }
+  .linkrow .btn { height:38px; }
+  .linkcard { margin-top:16px; display:grid; gap:14px; }
+  .linkcard .lc-head { display:flex; gap:14px; align-items:center; min-width:0; }
+  .linkcard .art { width:72px; height:72px; border-radius:var(--r-sm); object-fit:cover; flex:none;
+    background:var(--surface-3); box-shadow:inset 0 0 0 1px rgba(0,0,0,.05); }
+  .linkcard .art.ph { display:grid; place-items:center; color:var(--faint); }
+  .linkcard .art.ph svg { font-size:24px; }
+  .linkcard .meta { min-width:0; }
+  .linkcard .nm { font-weight:650; font-size:17px; letter-spacing:-.015em; line-height:1.3; overflow-wrap:anywhere; text-wrap:balance; }
+  .linkcard .sub { display:flex; flex-wrap:wrap; gap:0 6px; margin-top:4px; color:var(--muted); font-size:13px; }
+  .linkcard .sep { color:var(--faint); }
+  .linkcard ol.sample { margin:0; padding:0; list-style:none; border:1px solid var(--line); border-radius:var(--r-md);
+    background:var(--surface-2); }
+  .linkcard ol.sample li { display:flex; gap:12px; justify-content:space-between; padding:8px 12px; font-size:13.5px;
+    border-top:1px solid var(--line); min-width:0; }
+  .linkcard ol.sample li:first-child { border-top:0; }
+  .linkcard ol.sample .t { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .linkcard ol.sample .a { flex:none; max-width:45%; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .linkcard ol.sample .more { color:var(--muted); }
+  .linkcard .actions { margin-top:2px; }
+  .skeleton.one { grid-template-columns:1fr; }
+  .skeleton.one div { height:72px; }
   .empty { color:var(--muted); font-size:13.5px; padding:22px 4px; text-align:center; }
   .empty.left { text-align:left; padding:14px 2px; }
   .skeleton { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:12px; }
@@ -558,6 +583,7 @@
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <symbol id="i-note" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
     <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01" stroke-width="2.6"/></symbol>
@@ -613,10 +639,27 @@
   </div>
 
   <!-- ============================================================ SPOTIFY -->
-  <section class="view on" id="view-spotify" role="tabpanel">
+  <section class="view on stack" id="view-spotify" role="tabpanel">
+    <div class="panel measure" id="link-panel">
+      <h2>Paste a Spotify link</h2>
+      <p class="lede">A playlist, an album or a song. No Spotify account needed: in Spotify, use
+        <b>Share</b> &rsaquo; <b>Copy link</b> and paste it here.</p>
+      <form class="linkrow" id="link-form" novalidate>
+        <label class="field"><span class="visually-hidden">Spotify link</span>
+          <svg class="i"><use href="#i-link"/></svg>
+          <input type="url" id="link-input" placeholder="https://open.spotify.com/…" autocomplete="off"
+            spellcheck="false" inputmode="url" enterkeyhint="go">
+        </label>
+        <button class="btn" type="submit" id="link-look"><span class="spin"></span><span class="lbl">Look up</span></button>
+      </form>
+      <div class="linkcard" id="link-card" hidden></div>
+    </div>
+
     <div class="panel measure" id="sp-setup" hidden>
-      <h2>Connect Spotify</h2>
-      <p class="lede">This needs a Spotify app of your own. It is free and takes about a minute.</p>
+      <h2>Your own playlists</h2>
+      <p class="lede">Optional. Connecting your Spotify account lists your playlists here, private
+        ones and Liked Songs included, with no limit on length. It needs a Spotify app of your own,
+        which is free and takes about a minute.</p>
       <ol class="steps">
         <li>Open <b>developer.spotify.com/dashboard</b> and click <b>Create app</b>.</li>
         <li>Add this exact <b>Redirect URI</b>:
@@ -638,9 +681,10 @@
     </div>
 
     <div class="panel measure" id="sp-connect" hidden>
-      <h2>Connect Spotify</h2>
-      <p class="lede">Read-only access to your playlists. Connect once from a browser on the server;
-        after that anyone on the network can use it without signing in.</p>
+      <h2>Your own playlists</h2>
+      <p class="lede">Optional. Read-only access lists your playlists here, private ones and Liked
+        Songs included. Connect once from a browser on the server; after that anyone on the network
+        can use it without signing in.</p>
       <button class="btn spotify" type="button" onclick="location.href='/api/spotify/login'">
         <svg class="i"><use href="#i-note"/></svg>Connect to Spotify
       </button>
@@ -1011,6 +1055,82 @@ $('sp-copy').addEventListener('click', async () => {
     } catch (e2) {}
   }
   flash(ok ? 'Redirect URI copied.' : 'Could not copy. Select the text and copy it by hand.', ok);
+});
+
+/* ------------------------------------------------------------ pasted link */
+const KIND_WORD = { playlist: 'Playlist', album: 'Album', track: 'Song' };
+let linkData = null, linkSeq = 0;
+
+async function lookupLink() {
+  const text = $('link-input').value.trim();
+  if (!text) { flash('Paste a Spotify link first.', false); return; }
+  if (linkData && linkData.link === text) return;
+  const seq = ++linkSeq, b = $('link-look');
+  b.disabled = true; b.classList.add('busy');
+  linkData = null; renderLink(null, true);
+  try {
+    const j = await api('/api/link/preview', { link: text });
+    if (seq !== linkSeq) return;
+    linkData = { ...j, link: text };
+    renderLink(linkData);
+  } catch (e) {
+    if (seq === linkSeq) { renderLink(null); flash(e.message, false); }
+  } finally {
+    if (seq === linkSeq) { b.disabled = false; b.classList.remove('busy'); }
+  }
+}
+
+function renderLink(d, loading) {
+  const card = $('link-card');
+  if (loading) { card.hidden = false; card.innerHTML = '<div class="skeleton one"><div></div></div>'; return; }
+  card.hidden = !d;
+  if (!d) { card.innerHTML = ''; return; }
+  const art = d.image
+    ? `<img class="art" src="${esc(d.image)}" alt="">`
+    : `<span class="art ph">${icon('note')}</span>`;
+  const by = d.kind === 'playlist' ? (d.artist ? `by ${d.artist}` : '') : d.artist;
+  const count = d.kind === 'track' ? '' : plural(d.tracks, 'song');
+  const sub = [KIND_WORD[d.kind], by, count].filter(Boolean).map(esc).join('<span class="sep">·</span>');
+  const more = d.tracks - d.sample.length;
+  const sample = d.kind === 'track' ? '' : `<ol class="sample">${d.sample.map(t =>
+    `<li><span class="t">${esc(t.title)}</span><span class="a">${esc(t.artist)}</span></li>`).join('')}${
+    more > 0 ? `<li class="more">and ${plural(more, 'more song')}</li>` : ''}</ol>`;
+  const cut = d.truncated ? `<div class="callout warn">${icon('warn')}<div>Spotify’s public page lists
+    the first <b>${d.tracks}</b> of this playlist’s <b>${d.total}</b> songs, so only those are downloaded.
+    For all of them, connect your Spotify account below, or use a CSV from Exportify.</div></div>` : '';
+  const extra = d.kind === 'track' ? '' : ', with its CSV and an <code>.m3u</code>';
+  card.innerHTML = `<div class="lc-head">${art}<div class="meta"><div class="nm">${esc(d.name)}</div>
+    <div class="sub">${sub}</div></div></div>${sample}${cut}
+    <p class="fine">Saves to <code>${esc(d.folder)}/</code> in your music folder${extra}.
+      Songs you already have are skipped.</p>
+    <div class="actions"><button class="btn primary lg" id="link-go" type="button">Download</button>
+      <span class="hint out-hint"></span></div>`;
+  $('link-go').addEventListener('click', downloadLink);
+  renderOutput();
+}
+
+async function downloadLink() {
+  if (!linkData) return;
+  const b = $('link-go');
+  b.disabled = true; b.textContent = 'Queueing…';
+  try {
+    const j = await api('/api/link/download',
+      { link: linkData.link, bitrate: SETTINGS.bitrate, format: SETTINGS.format });
+    flash(`Queued “${j.job.name}”, ${plural(j.tracks, 'song')} (position ${j.position}).`, true);
+    $('link-input').value = ''; linkData = null; renderLink(null);
+    showTab('queue');
+  } catch (e) {
+    flash(e.message, false);
+    b.disabled = false; b.textContent = 'Download';
+  }
+  poll();
+}
+
+$('link-form').addEventListener('submit', e => { e.preventDefault(); lookupLink(); });
+// Pasting is the whole gesture: look it up straight away.
+$('link-input').addEventListener('paste', () => setTimeout(lookupLink, 0));
+$('link-input').addEventListener('input', () => {
+  if (linkData && $('link-input').value.trim() !== linkData.link) { linkData = null; renderLink(null); }
 });
 
 /* ------------------------------------------------------------ csv */

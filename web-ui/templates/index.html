@@ -521,6 +521,12 @@
   .note.warn svg { color:var(--warn); } .note.ok svg { color:var(--ok); }
   .note b { color:var(--ink); font-weight:620; }
   .kv { display:grid; grid-template-columns:auto 1fr; gap:6px 18px; font-size:13.5px; margin:0 0 16px; }
+  .syncs .row { grid-template-columns:28px minmax(0, 1fr) auto; }
+  .syncs .state { background:var(--accent-soft); color:var(--accent); }
+  .syncs .state.error { background:var(--fail-soft); color:var(--fail); }
+  .syncs .act { display:flex; gap:2px; }
+  .syncs .sub .msg-err { color:var(--fail); }
+  .linkcard .check { margin-top:0; }
   .srcs .nm { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .srcs .act { display:flex; gap:4px; }
   .srcs .act .btn { width:32px; padding:0; justify-content:center; }
@@ -654,6 +660,13 @@
         <button class="btn" type="submit" id="link-look"><span class="spin"></span><span class="lbl">Look up</span></button>
       </form>
       <div class="linkcard" id="link-card" hidden></div>
+    </div>
+
+    <div class="panel measure" id="sync-panel" hidden>
+      <h2>Kept in sync</h2>
+      <p class="lede" id="sync-lede">New songs added on Spotify are downloaded on their own, and the
+        <code>.m3u</code> follows the playlist’s order. Songs removed on Spotify stay in the folder.</p>
+      <div class="rows syncs" id="sync-rows"></div>
     </div>
 
     <div class="panel measure" id="sp-setup" hidden>
@@ -987,7 +1000,9 @@ function renderPlaylists() {
     const art = p.image
       ? `<img class="art" src="${esc(p.image)}" alt="" loading="lazy">`
       : `<span class="art ph">${icon('note')}</span>`;
-    const tags = (p.collaborative ? '<span class="tag">shared</span>' : '')
+    const synced = syncSources.has(p.id === '__liked__' ? 'liked' : `spotify:playlist:${p.id}`);
+    const tags = (synced ? '<span class="tag">synced</span>' : '')
+               + (p.collaborative ? '<span class="tag">shared</span>' : '')
                + (p.public ? '<span class="tag">public</span>' : '');
     return `<article class="card">
       ${art}
@@ -996,7 +1011,7 @@ function renderPlaylists() {
         <div class="sub"><span class="num">${plural(p.tracks, 'track')}</span>${
           p.owner ? `<span class="sep">·</span><span class="owner">${esc(p.owner)}</span>` : ''}</div>
       </div>
-      <button class="btn sm" type="button" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Save CSV</button>
+      <button class="btn sm" type="button" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Download</button>
     </article>`;
   }).join('');
   $('sp-grid').querySelectorAll('button[data-id]').forEach(b =>
@@ -1017,7 +1032,7 @@ $('sp-view').addEventListener('click', e => {
 async function queuePlaylist(btn, id, name) {
   btn.disabled = true;
   const was = btn.textContent;
-  btn.textContent = 'Exporting…';
+  btn.textContent = 'Reading…';
   try {
     const j = await api('/api/spotify/download',
       { playlist_id: id, name, bitrate: SETTINGS.bitrate, format: SETTINGS.format });
@@ -1100,10 +1115,14 @@ function renderLink(d, loading) {
   const cut = (d.notes || []).map(n =>
     `<div class="callout warn">${icon('warn')}<div>${esc(n)}</div></div>`).join('');
   const extra = d.kind === 'track' ? '' : ', with its CSV and an <code>.m3u</code>';
+  const every = syncEvery((lastData.sync || {}).interval);
+  const syncBox = d.kind !== 'playlist' ? '' : `<label class="check"><input type="checkbox" id="link-sync" checked>
+    <span>Keep in sync<small>${every ? `Checks Spotify every ${every} and downloads songs added since.`
+      : 'Downloads songs added since whenever you press Sync now.'}</small></span></label>`;
   card.innerHTML = `<div class="lc-head">${art}<div class="meta"><div class="nm">${esc(d.name)}</div>
     <div class="sub">${sub}</div></div></div>${sample}${cut}
     <p class="fine">Saves to <code>${esc(d.folder)}/</code> in your music folder${extra}.
-      Songs you already have are skipped.</p>
+      Songs you already have are skipped.</p>${syncBox}
     <div class="actions"><button class="btn primary lg" id="link-go" type="button">Download</button>
       <span class="hint out-hint"></span></div>`;
   $('link-go').addEventListener('click', downloadLink);
@@ -1116,7 +1135,8 @@ async function downloadLink() {
   b.disabled = true; b.textContent = 'Queueing…';
   try {
     const j = await api('/api/link/download',
-      { link: linkData.link, bitrate: SETTINGS.bitrate, format: SETTINGS.format });
+      { link: linkData.link, bitrate: SETTINGS.bitrate, format: SETTINGS.format,
+        sync: $('link-sync') && !$('link-sync').checked ? '0' : '1' });
     flash(`Queued “${j.job.name}”, ${plural(j.tracks, 'song')} (position ${j.position}).`, true);
     $('link-input').value = ''; linkData = null; renderLink(null);
     showTab('queue');
@@ -1132,6 +1152,75 @@ $('link-form').addEventListener('submit', e => { e.preventDefault(); lookupLink(
 $('link-input').addEventListener('paste', () => setTimeout(lookupLink, 0));
 $('link-input').addEventListener('input', () => {
   if (linkData && $('link-input').value.trim() !== linkData.link) { linkData = null; renderLink(null); }
+});
+
+/* ------------------------------------------------------------ sync */
+let syncSig = '', syncSources = new Set();
+const ago = t => {
+  const s = Math.max(0, Date.now() / 1000 - t);
+  if (s < 90) return 'just now';
+  if (s < 5400) return `${Math.round(s / 60)} min ago`;
+  if (s < 129600) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} days ago`;
+};
+
+const syncEvery = n => !n ? '' : n === 3600 ? 'hour'
+  : n % 3600 === 0 ? `${n / 3600} hours` : `${Math.round(n / 60)} min`;
+
+function renderSync(block) {
+  if (!block) return;
+  const items = block.items || [];
+  // Re-rendered each poll only when something changed, apart from the clock.
+  const sig = JSON.stringify(items) + Math.floor(Date.now() / 60000);
+  if (sig === syncSig) return;
+  syncSig = sig;
+  const before = syncSources.size;
+  syncSources = new Set(items.map(i => i.source));
+  if (syncSources.size !== before && spLoaded) renderPlaylists();
+  $('sync-panel').hidden = !items.length;
+  const every = syncEvery(block.interval);
+  $('sync-lede').innerHTML = block.interval
+    ? `Checked every ${every}: new songs added on Spotify are downloaded on their own, and the
+       <code>.m3u</code> follows the playlist’s order. Songs removed on Spotify stay in the folder.`
+    : 'Automatic checks are off (<code>SYNC_INTERVAL</code> is 0). Use Sync now.';
+  $('sync-rows').innerHTML = items.map(it => {
+    const last = it.changed
+      ? `last change ${ago(it.changed)}${it.added ? `, ${plural(it.added, 'new song')}` : ''}` : '';
+    const status = it.queued ? '<span class="pill warn">in the queue</span>' : '';
+    const err = it.error ? `<span class="msg-err">${esc(it.error)}</span>` : '';
+    return `<div class="row">
+      <span class="state ${it.error ? 'error' : ''}">${icon(it.error ? 'warn' : 'refresh')}</span>
+      <div class="nm">${esc(it.name)} ${status}</div>
+      <div class="act">
+        <button class="btn ghost sm" type="button" data-sync-now="${esc(it.source)}">Sync now</button>
+        <button class="btn ghost sm danger" type="button" data-sync-stop="${esc(it.source)}">Stop</button>
+      </div>
+      <div class="sub"><span>${plural(it.songs, 'song')}</span><span>checked ${ago(it.checked)}</span>
+        ${last ? `<span>${esc(last)}</span>` : ''}${err}</div>
+    </div>`;
+  }).join('');
+}
+
+$('sync-rows').addEventListener('click', async e => {
+  const now = e.target.closest('[data-sync-now]'), stop = e.target.closest('[data-sync-stop]');
+  if (now) {
+    now.disabled = true; now.textContent = 'Checking…';
+    try {
+      const j = await api('/api/sync/now', { source: now.dataset.syncNow });
+      flash(`Sync: ${j.result}.`, !/^could not/.test(j.result));
+      syncSig = ''; renderSync(j.sync);
+    } catch (err) { flash(err.message, false); now.disabled = false; now.textContent = 'Sync now'; }
+    poll();
+  } else if (stop) {
+    const ok = await confirmAction({
+      title: 'Stop syncing?',
+      body: 'The folder and its songs stay as they are; new songs on Spotify are no longer downloaded.',
+      action: 'Stop syncing',
+    });
+    if (!ok) return;
+    try { const j = await api('/api/sync/remove', { source: stop.dataset.syncStop }); syncSig = ''; renderSync(j.sync); }
+    catch (err) { flash(err.message, false); }
+  }
 });
 
 /* ------------------------------------------------------------ csv */
@@ -1703,6 +1792,7 @@ async function refresh() {
   $('ytdlp').textContent = d.ytdlp || '…';
   $('appver').textContent = d.app_version || 'dev';
   renderSources(d.sources);
+  renderSync(d.sync);
   if (d.setup && !d.setup.onboarded && !obShown) { obShown = true; openOnboard('choose', 'setup'); }
 
   if (d.bitrate_notes && !Object.keys(NOTES).length) {

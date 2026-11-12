@@ -36,6 +36,7 @@ import slskd
 import slskd_config
 import spotify as sp
 import spotify_link
+import sync
 from sources import P2PSource
 
 app = Flask(__name__)
@@ -234,7 +235,8 @@ class Job:
     """One playlist run. Its own lock; read by polling requests."""
 
     def __init__(self, csv_path, bitrate, audio_format=core.DEFAULT_FORMAT,
-                 source="upload", name=None, output_dir=None, write_playlist=True):
+                 source="upload", name=None, output_dir=None, write_playlist=True,
+                 numbered=False):
         self.id = uuid.uuid4().hex[:12]
         self.csv_path = csv_path
         self.name = name or os.path.splitext(os.path.basename(csv_path))[0]
@@ -242,6 +244,8 @@ class Job:
         # out of the music library).
         self.target_dir = output_dir or os.path.dirname(csv_path)
         self.write_playlist = write_playlist
+        # Track numbers in file names: albums only. See process_playlist.
+        self.numbered = numbered
         self.bitrate = bitrate
         self.audio_format = audio_format
         self.source = source
@@ -326,6 +330,7 @@ class Job:
                 sources=ordered_sources(),
                 output_dir=self.target_dir,
                 write_playlist=self.write_playlist,
+                numbered=self.numbered,
             ):
                 self._handle(ev)
             if self.downloaded:
@@ -461,6 +466,12 @@ class JobQueue:
                 self._recent.appendleft(j)
                 dropped += 1
         return dropped
+
+    def has_csv(self, csv_path):
+        """Whether a job for this CSV is waiting or running."""
+        with self._lock:
+            jobs = list(self._pending) + ([self._current] if self._current else [])
+        return any(j.csv_path == csv_path and not j.cancelled for j in jobs)
 
     def busy(self):
         with self._lock:
@@ -793,6 +804,7 @@ def api_state():
             },
             "sources": sources_block(),
             "setup": {"onboarded": load_settings()["onboarded"]},
+            "sync": sync_block(),
         }
     )
     return jsonify(snap)
@@ -959,9 +971,11 @@ def api_start():
         csv_path = playlist_csv_path(chosen)
         source = "saved"
 
-    # An album folder reads "Artist – Album" in the queue, as when it was pasted.
-    name = chosen.replace("/", " \u2013 ") if source == "saved" else None
-    job = Job(csv_path, bitrate, audio_format, source=source, name=name)
+    # An album folder reads "Artist – Album" in the queue, as when it was
+    # pasted, and keeps its track numbers.
+    album = source == "saved" and "/" in chosen
+    name = chosen.replace("/", " \u2013 ") if album else None
+    job = Job(csv_path, bitrate, audio_format, source=source, name=name, numbered=album)
     position = queue.add(job)
     return jsonify({"job": job.snapshot(with_events=False), "position": position})
 
@@ -1150,8 +1164,12 @@ def spotify_download():
     except Exception as e:
         return jsonify({"error": f"Could not reach Spotify: {e}"}), 502
 
-    job = Job(csv_path, bitrate, audio_format, source="spotify")
+    job = Job(csv_path, bitrate, audio_format, source="spotify", name=name)
     position = queue.add(job)
+    if request.form.get("sync", "1") == "1":
+        source = "liked" if playlist_id == sp.LIKED_SONGS_ID else f"spotify:playlist:{playlist_id}"
+        sync_store.add(source, name, os.path.basename(os.path.dirname(csv_path)),
+                       bitrate, audio_format)
     return jsonify(
         {
             "job": job.snapshot(with_events=False),
@@ -1233,7 +1251,7 @@ def link_target(col):
         stem = safe_playlist_name(col.name)
         return {"csv": playlist_csv_path(stem), "folder": stem,
                 "output_dir": os.path.join(MUSIC_DIR, stem),
-                "write_playlist": True, "name": col.name}
+                "write_playlist": True, "name": col.name, "numbered": False}
     # Albums and songs file under their first artist, so a song by
     # "Future, Drake" sits with Future's other music.
     artist = safe_playlist_name(col.artist or "Unknown artist")
@@ -1242,10 +1260,12 @@ def link_target(col):
         folder = f"{artist}/{album}"
         return {"csv": playlist_csv_path(folder), "folder": folder,
                 "output_dir": os.path.join(MUSIC_DIR, artist, album),
-                "write_playlist": True, "name": f"{col.artist} \u2013 {col.name}"}
+                "write_playlist": True, "name": f"{col.artist} \u2013 {col.name}",
+                "numbered": True}
     return {"csv": os.path.join(LINKS_DIR, f"{col.id}.csv"), "folder": artist,
             "output_dir": os.path.join(MUSIC_DIR, artist),
-            "write_playlist": False, "name": f"{col.artist} \u2013 {col.name}"}
+            "write_playlist": False, "name": f"{col.artist} \u2013 {col.name}",
+            "numbered": False}
 
 
 def _link_error(e):
@@ -1298,14 +1318,147 @@ def api_link_download():
     except OSError as e:
         return jsonify({"error": f"Could not write the CSV: {e}"}), 500
     job = Job(target["csv"], bitrate, audio_format, source="link", name=target["name"],
-              output_dir=target["output_dir"], write_playlist=target["write_playlist"])
+              output_dir=target["output_dir"], write_playlist=target["write_playlist"],
+              numbered=target["numbered"])
     position = queue.add(job)
+    if col.kind == "playlist" and request.form.get("sync", "1") == "1":
+        sync_store.add(f"spotify:playlist:{col.id}", col.name, target["folder"],
+                       bitrate, audio_format)
+        sync_store.update(f"spotify:playlist:{col.id}", songs=len(col.rows),
+                          snapshot=col.snapshot)
     return jsonify({
         "job": job.snapshot(with_events=False),
         "position": position,
         "tracks": len(col.rows),
         "folder": target["folder"],
     })
+
+
+# ---------------------------------------------------------------- sync
+
+sync_store = sync.SyncStore(STATE_DIR)
+# Seconds between checks of each synced playlist; 0 turns checking off.
+try:
+    SYNC_INTERVAL = max(0, int(os.environ.get("SYNC_INTERVAL", "3600")))
+except ValueError:
+    SYNC_INTERVAL = 3600
+
+
+def _read_synced(entry, force):
+    """
+    (Collection, snapshot) for a synced playlist as it is now, or
+    (None, snapshot) when Spotify says it has not changed since last time.
+    Through the account when connected; from the public pages otherwise, or
+    when Spotify refuses the account.
+    """
+    if entry["source"] == "liked":
+        if not spotify.connected:
+            raise sp.SpotifyError("Liked Songs can only be read with the Spotify account connected.")
+        rows = spotify.playlist_rows(sp.LIKED_SONGS_ID)
+        return spotify_link.Collection("playlist", "liked", "Liked Songs", "you", rows,
+                                       len(rows), len(rows), via="account"), ""
+    link = spotify_link.Link("playlist", entry["source"].rsplit(":", 1)[-1])
+    if spotify.connected:
+        try:
+            snap = spotify.playlist_snapshot(link.id)
+            if snap and snap == entry.get("snapshot") and not force:
+                return None, snap
+            col = spotify_link.read_with_account(link, spotify)
+            return col, snap
+        except sp.SpotifyError:
+            pass
+    return spotify_link.read(link), ""
+
+
+def sync_check(entry, force=False):
+    """
+    Check one synced playlist and queue a job when its songs changed (always,
+    with force, which also retries songs that failed before). Returns what
+    happened, for the Sync now button.
+    """
+    src, now = entry["source"], time.time()
+    csv_path = playlist_csv_path(entry["folder"])
+    if queue.has_csv(csv_path):
+        return "already in the queue"
+    try:
+        col, snap = _read_synced(entry, force)
+    except Exception as e:
+        sync_store.update(src, checked=now, error=str(e))
+        return f"could not check: {e}"
+    if col is None:
+        sync_store.update(src, checked=now, error="")
+        return "no changes"
+    try:
+        _, old_rows = core.read_playlist_csv(csv_path)
+    except (OSError, ValueError):
+        old_rows = []
+    old = [r.get("Track URI", "") for r in old_rows]
+    new = [r.get("Track URI", "") for r in col.rows]
+    fields = {"checked": now, "error": "", "snapshot": snap, "songs": len(col.rows)}
+    if new == old and not force:
+        sync_store.update(src, **fields)
+        return "no changes"
+    added = len(set(new) - set(old))
+    try:
+        spotify_link.write_csv(col, csv_path)
+    except OSError as e:
+        sync_store.update(src, checked=now, error=f"Could not write the CSV: {e}")
+        return "could not write the CSV"
+    queue.add(Job(csv_path, entry.get("bitrate") or core.DEFAULT_BITRATE,
+                  entry.get("format") or core.DEFAULT_FORMAT, source="sync",
+                  name=entry.get("name") or entry["folder"]))
+    if new != old:
+        fields.update(changed=now, added=added)
+    sync_store.update(src, **fields)
+    return f"{added} new song{'' if added == 1 else 's'}, queued" if added else "queued"
+
+
+def sync_block():
+    """The synced playlists for /api/state."""
+    items = []
+    for e in sync_store.all():
+        items.append({
+            "source": e["source"], "name": e.get("name") or e["folder"],
+            "folder": e["folder"], "songs": e.get("songs", 0),
+            "checked": e.get("checked", 0), "changed": e.get("changed", 0),
+            "added": e.get("added", 0), "error": e.get("error", ""),
+            "queued": queue.has_csv(playlist_csv_path(e["folder"])),
+        })
+    return {"interval": SYNC_INTERVAL, "items": items}
+
+
+def _sync_loop():
+    # A minute's grace after start, then each playlist once per interval.
+    time.sleep(60)
+    while True:
+        for entry in sync_store.all():
+            if time.time() - entry.get("checked", 0) >= SYNC_INTERVAL:
+                try:
+                    sync_check(entry)
+                except Exception as e:  # never let one playlist stop the loop
+                    sync_store.update(entry["source"], error=str(e))
+        time.sleep(60)
+
+
+if SYNC_INTERVAL:
+    threading.Thread(target=_sync_loop, daemon=True).start()
+
+
+@app.post("/api/sync/now")
+@require_auth
+def api_sync_now():
+    entry = sync_store.get(request.form.get("source", ""))
+    if not entry:
+        return jsonify({"error": "That playlist is not synced."}), 404
+    return jsonify({"result": sync_check(entry, force=True), "sync": sync_block()})
+
+
+@app.post("/api/sync/remove")
+@require_auth
+def api_sync_remove():
+    if not sync_store.remove(request.form.get("source", "")):
+        return jsonify({"error": "That playlist is not synced."}), 404
+    return jsonify({"ok": True, "sync": sync_block()})
 
 
 if __name__ == "__main__":

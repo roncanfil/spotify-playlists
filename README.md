@@ -55,6 +55,9 @@ the Spotify redirect URI.
   first 100 songs of a playlist. Connect your account once and links are read
   through it, complete and with genres, and your own playlists are listed
   below as a grid or a list.
+- Keep a playlist in sync: every hour the app checks Spotify and downloads
+  songs added since, so a playlist someone keeps adding to stays mirrored in
+  its folder. Songs removed on Spotify stay in the folder and leave the `.m3u`.
 - CSV tab: upload an Exportify CSV instead, if you would rather not connect
   Spotify.
 - Queue tab: one job at a time with live progress, filters for Saved, Skipped
@@ -78,9 +81,9 @@ pasted on their own in the artist's folder:
 music/
 ├── Lenox Ave/                        a playlist
 │   ├── Lenox Ave.csv                 the playlist it came from
-│   ├── Lenox Ave.m3u                 generated after every run
-│   ├── Tycho - 01 - Sunrise.mp3
-│   └── Bonobo - 02 - Café Solo.mp3
+│   ├── Lenox Ave.m3u                 in the playlist's order
+│   ├── Tycho - Sunrise.mp3
+│   └── Bonobo - Café Solo.mp3
 └── Daft Punk/
     ├── Daft Punk - Get Lucky.mp3     a song pasted on its own
     └── Random Access Memories/       an album
@@ -89,6 +92,9 @@ music/
         └── Daft Punk - 01 - Give Life Back to Music.mp3
 ```
 
+Only album tracks are numbered. A playlist is a changing mix, so its files are
+plain `Artist - Title.mp3` and the `.m3u` carries the order; files named with a
+number by older versions are renamed in place, not downloaded again.
 Tracks you already have are skipped, so re-runs only fetch what is missing.
 Every file is checked against Spotify's length (within 10 seconds) from
 either source, so a music video with a long intro or a live take is passed

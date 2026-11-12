@@ -575,6 +575,28 @@ def song_exists(output_dir, basename, ext):
     return os.path.exists(path)
 
 
+def _adopt_numbered(output_dir, existing, artist, title, basename, ext):
+    """
+    Rename "Artist - 07 - Title.ext", from when playlist files were numbered,
+    to `basename`.ext, so the track is skipped instead of downloaded again.
+    `existing` is the folder's listing; it is updated. True if renamed.
+    """
+    head = f"{sanitize_filename(artist)} - "
+    tail = f" - {sanitize_filename(title)}.{ext}"
+    for name in sorted(existing):
+        middle = name[len(head):-len(tail)] if name.startswith(head) and name.endswith(tail) else ""
+        if middle.isdigit() and len(name) > len(head) + len(tail):
+            try:
+                os.rename(os.path.join(output_dir, name),
+                          os.path.join(output_dir, f"{basename}.{ext}"))
+            except OSError:
+                return False
+            existing.discard(name)
+            existing.add(f"{basename}.{ext}")
+            return True
+    return False
+
+
 def normalize_audio_format(audio_format):
     """Coerce an output format to one we support; raises ValueError otherwise."""
     value = str(audio_format or DEFAULT_FORMAT).strip().lower()
@@ -1007,6 +1029,7 @@ def process_playlist(
     sources=None,
     output_dir=None,
     write_playlist=True,
+    numbered=True,
 ):
     """
     Run one playlist, yielding progress events.
@@ -1024,6 +1047,13 @@ def process_playlist(
     (an album's Artist/Album folder, a single's artist folder). With
     write_playlist False no .m3u is written: a single song needs none, and in
     an artist's folder it would only pile up.
+
+    numbered=False names files "Artist - Title" with no track number, as the
+    web UI does for everything but albums. A playlist is a changing mix, and a
+    number in the name ties each file to a position that moves whenever songs
+    are added, removed or reordered, which used to re-download everything. A
+    file from before, "Artist - 07 - Title", is renamed rather than fetched
+    again. The track-number tag is still written either way.
     """
     bitrate = normalize_bitrate(bitrate)
     audio_format = normalize_audio_format(audio_format)
@@ -1078,6 +1108,11 @@ def process_playlist(
     downloaded = skipped = failed = 0
     # (filename, artist, title) in playlist order, for the .m3u at the end.
     m3u_entries = []
+    # Files already in the folder, for finding numbered names from before.
+    try:
+        existing = set(os.listdir(output_dir)) if not numbered else set()
+    except OSError:
+        existing = set()
 
     for playlist_index, row in enumerate(rows, start=1):
         if should_cancel is not None and should_cancel():
@@ -1097,7 +1132,9 @@ def process_playlist(
         track_padded, track_tag = build_track_display_and_tag(
             row, playlist_index, playlist_len, cols["track_num"], cols["total_tracks"]
         )
-        basename = output_basename(artist, track_padded, track_title)
+        basename = output_basename(artist, track_padded if numbered else "", track_title)
+        if not numbered and not song_exists(output_dir, basename, ext):
+            _adopt_numbered(output_dir, existing, artist, track_title, basename, ext)
 
         release_raw = (
             cell_str(row, cols["release_date"]) if cols["release_date"] else ""

@@ -10,7 +10,7 @@ set up, and from YouTube otherwise.
 
 - Spotify tab: paste a playlist, album or song link, check what it found, and
   hit Download; no account needed. Below it, optionally, connect your account
-  once to browse your own playlists as a grid or a list and hit Save CSV.
+  once to browse your own playlists as a grid or a list and hit Download.
 - CSV tab: upload a CSV instead and hit Process Playlist.
 - Queue tab: one job at a time with live progress, filters for Saved, Skipped
   and Failed, a separate list of failures with their errors, and a per-track
@@ -64,6 +64,7 @@ Dockge, none of which can supply a `.env`.
 | `/music` mount | `./music` | Everything that persists. The only volume |
 | `APP_PASSWORD` | empty | Blank means no login. Otherwise a password page guards the app |
 | `AUTO_UPDATE_YTDLP` | `1` | Reinstall the latest yt-dlp on each start |
+| `SYNC_INTERVAL` | `3600` | Seconds between checks of playlists kept in sync; `0` turns automatic checks off |
 | `SPOTIFY_CLIENT_ID` | empty | Blank hides the Spotify tab |
 | `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8765/callback` | Must match the Spotify dashboard exactly, port included |
 | `SLSKD_URL` | `http://slskd:5030` | Not in the compose file. Only for an slskd somewhere other than the bundled service |
@@ -96,12 +97,13 @@ music/
 │   ├── settings.json                     source order, and whether setup ran
 │   ├── slskd/                            slskd's settings, database, downloads
 │   │   └── slskd.yml                     written by the app; owner-only
+│   ├── sync.json                         playlists kept in sync
 │   └── links/                            CSVs of songs pasted on their own
 ├── Lenox Ave/                            a playlist
 │   ├── Lenox Ave.csv                     the playlist it came from
-│   ├── Lenox Ave.m3u                     generated after each run
-│   ├── Tycho - 01 - Sunrise.mp3
-│   └── Bonobo - 02 - Café Solo.mp3
+│   ├── Lenox Ave.m3u                     in the playlist's order
+│   ├── Tycho - Sunrise.mp3
+│   └── Bonobo - Café Solo.mp3
 └── Daft Punk/                            an artist
     ├── Daft Punk - Get Lucky.mp3         a song, pasted as a link
     └── Random Access Memories/           an album, pasted as a link
@@ -110,9 +112,15 @@ music/
         └── Daft Punk - 01 - Give Life Back to Music.mp3
 ```
 
-Playlists are numbered by their position in the playlist, albums by their own
-track numbers. A song pasted on its own is named `Artist - Title` with no
-number and gets no `.m3u`, which would only pile up in the artist's folder. Its
+Only albums are numbered, by their own track numbers. Playlists, from a link,
+the account or a CSV, are named `Artist - Title`: a playlist is a changing mix,
+and a number tied each file to a position that moved whenever songs were added,
+removed or reordered, which re-downloaded everything after it. The `.m3u`
+carries the order instead. Files named with a number by older versions are
+renamed in place on the next run. Two songs with the same artist and title in
+one playlist share a name, so only the first is downloaded. A song pasted on
+its own is named the same way and gets no `.m3u`, which would only pile up in
+the artist's folder. Its
 CSV is kept in the hidden state folder so the artist's folder holds only music.
 Albums and songs file under their first artist, so a song by "Future, Drake"
 sits with Future's other music.
@@ -163,6 +171,24 @@ playlist.
 
 The preview is kept for ten minutes, so pressing Download does not fetch the
 pages again.
+
+## Keeping playlists in sync
+
+A playlist downloaded from Spotify, pasted or picked from your list, is kept
+in sync unless you untick it. Every `SYNC_INTERVAL` seconds (an hour by
+default; 0 turns it off) the app reads it again, and when its songs changed it
+rewrites the CSV and queues an ordinary job: songs on disk are skipped, new
+ones downloaded, and the `.m3u` rewritten in Spotify's order. Songs removed on
+Spotify keep their files. Through the connected account an unchanged playlist
+costs one small request, since Spotify gives every playlist a version id that
+changes with each edit; without the account the public pages are read again.
+
+The Kept in sync panel on the Spotify tab lists them, with Sync now, which
+always queues a run and so also retries songs that failed, and Stop, which
+leaves the folder as it is. Each keeps the format and bitrate it was first
+downloaded with, since the checks run on the server, away from any browser's
+settings. The folder is fixed when syncing starts, so renaming the playlist on
+Spotify does not start a second copy.
 
 ## Spotify setup
 
@@ -254,6 +280,7 @@ sources.py     the source interface, and the P2P candidate loop: rank, try,
 match.py       which Soulseek file is the track; ported from spotseek (MIT)
 slskd.py       Soulseek through slskd's HTTP API, with the search limiter
 slskd_config.py  slskd's settings file: API key, account, sharing
+sync.py        which playlists are kept in sync, and what was last seen
 spotify_link.py  pasted Spotify links, read from the public pages
      ^ imported by
 app.py         Flask API: auth, start/cancel/poll, source order, yt-dlp updater
@@ -315,7 +342,9 @@ replaced and why.
 | `GET` | `/api/job/<id>` | One job including its event log |
 | `POST` | `/api/start` | Queue a job (`bitrate`, plus `playlist` or `csv` upload); `playlist` is a folder from `playlists`, such as `Mix` or `Artist/Album` |
 | `POST` | `/api/link/preview` | Read a pasted Spotify link (`link`): what it is, how many songs, where it will be saved; 400 with the reason for a link that cannot be read |
-| `POST` | `/api/link/download` | Queue a pasted link (`link`, `bitrate`, `format`) |
+| `POST` | `/api/link/download` | Queue a pasted link (`link`, `bitrate`, `format`; `sync=0` to not keep a playlist in sync) |
+| `POST` | `/api/sync/now` | Check a synced playlist now and queue a run (`source`) |
+| `POST` | `/api/sync/remove` | Stop syncing a playlist (`source`); its folder is kept |
 | `POST` | `/api/cancel` | Cancel a job by `job_id`, running or waiting |
 | `POST` | `/api/cancel-all` | Drop every waiting job, leaving the running one |
 | `POST` | `/api/update-ytdlp` | Upgrade yt-dlp into the state volume |
@@ -327,7 +356,7 @@ replaced and why.
 | `GET` | `/api/spotify/login` | Redirects to Spotify's consent screen |
 | `GET` | `/callback` | OAuth redirect target |
 | `GET` | `/api/spotify/playlists` | Your playlists with artwork and counts |
-| `POST` | `/api/spotify/download` | Export a playlist to CSV and queue it |
+| `POST` | `/api/spotify/download` | Export a playlist to CSV and queue it, kept in sync unless `sync=0` |
 | `POST` | `/api/spotify/disconnect` | Forget the stored token |
 
 Jobs queue instead of being rejected, and run strictly one at a time, one track

@@ -454,14 +454,23 @@ class SpotifyClient:
         picking it from the list give the same CSV, folder and file names.
         """
         data = self._get(
-            f"/playlists/{playlist_id}", {"fields": "name,owner(display_name),images"}
+            f"/playlists/{playlist_id}", {"fields": "name,owner(display_name),images,snapshot_id"}
         )
         return {
+            "snapshot": data.get("snapshot_id") or "",
             "name": data.get("name") or playlist_id,
             "artist": (data.get("owner") or {}).get("display_name") or "",
             "image": _first_image(data),
             "rows": self.playlist_rows(playlist_id),
         }
+
+    def playlist_snapshot(self, playlist_id):
+        """
+        Spotify's version id for a playlist, which changes with every edit:
+        one small request tells a synced playlist that has not changed.
+        """
+        data = self._get(f"/playlists/{playlist_id}", {"fields": "snapshot_id"})
+        return data.get("snapshot_id") or ""
 
     def album_entry(self, album_id):
         album = self._get(f"/albums/{album_id}")

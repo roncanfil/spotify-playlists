@@ -26,6 +26,9 @@ services:
       # Refresh yt-dlp each start; a restart then fixes most YouTube breakage.
       AUTO_UPDATE_YTDLP: "1"
 
+      # Seconds between checks of playlists kept in sync; 0 turns them off.
+      # SYNC_INTERVAL: "3600"
+
       BGUTIL_POT_BASE_URL: http://bgutil-provider:4416
     volumes:
       # Your library, and the only path to set. One folder per playlist,

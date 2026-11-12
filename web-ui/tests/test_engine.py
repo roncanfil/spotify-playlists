@@ -356,3 +356,31 @@ def test_a_job_can_name_its_folder_and_skip_the_playlist_file(playlist, tmp_path
     assert os.path.dirname(done["path"]) == str(out)
     assert os.listdir(out) == ["Enya - 02 - Orinoco Flow.mp3"]
     assert of(events, "summary")[0]["playlist_file"] is None
+
+
+@needs_ffmpeg
+def test_unnumbered_playlist_files_are_artist_and_title(playlist, tmp_path, audio, monkeypatch):
+    FakeYDL.fixture, FakeYDL.searches = audio["opus_webm"], []
+    monkeypatch.setattr(core.yt_dlp, "YoutubeDL", FakeYDL)
+    events = list(core.process_playlist(playlist, 192, "mp3", output_root=str(tmp_path / "music"),
+                                        sources=None, numbered=False))
+    (done,) = of(events, "track_done")
+    assert os.path.basename(done["path"]) == "Enya - Orinoco Flow.mp3"
+    # The track-number tag is still written.
+    from mutagen.id3 import ID3
+
+    assert str(ID3(done["path"])["TRCK"]) == "2"
+
+
+def test_a_numbered_file_from_before_is_renamed_not_downloaded(playlist, tmp_path, monkeypatch):
+    out = tmp_path / "music" / "mix"
+    out.mkdir(parents=True)
+    (out / "Enya - 02 - Orinoco Flow.mp3").write_bytes(b"old")
+    (out / "Enya - 02 - Orinoco Flow (Live).mp3").write_bytes(b"another song")
+    FakeYDL.searches = []
+    monkeypatch.setattr(core.yt_dlp, "YoutubeDL", FakeYDL)
+    events = list(core.process_playlist(playlist, 192, "mp3", output_root=str(tmp_path / "music"),
+                                        sources=None, numbered=False))
+    assert FakeYDL.searches == [] and len(of(events, "skip")) == 1
+    assert (out / "Enya - Orinoco Flow.mp3").read_bytes() == b"old"
+    assert (out / "Enya - 02 - Orinoco Flow (Live).mp3").exists()

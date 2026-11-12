@@ -15,6 +15,8 @@ _MUSIC = tempfile.mkdtemp(prefix="music-")
 os.environ["MUSIC_DIR"] = _MUSIC
 os.environ.pop("SLSKD_URL", None)
 os.environ.pop("APP_PASSWORD", None)
+# No background sync thread in tests; sync_check is called directly.
+os.environ["SYNC_INTERVAL"] = "0"
 
 import app as webapp  # noqa: E402
 
@@ -55,7 +57,8 @@ class FakeSlskd:
 
 @pytest.fixture(autouse=True)
 def fresh(monkeypatch):
-    for path in (webapp.SETTINGS_PATH, webapp.LEGACY_ORDER_PATH, webapp.slsk_settings.path):
+    for path in (webapp.SETTINGS_PATH, webapp.LEGACY_ORDER_PATH, webapp.slsk_settings.path,
+                 webapp.sync_store.path):
         try:
             os.remove(path)
         except OSError:
@@ -428,3 +431,102 @@ def test_logged_out_a_long_playlist_suggests_connecting(links):
     col = webapp.read_link("https://open.spotify.com/playlist/abcdefghijklmnopqrstuv")
     (note,) = webapp.link_notes(col)
     assert "connect your Spotify account below" in note
+
+
+# ---------------------------------------------------------------- numbering and sync
+
+
+def test_only_albums_are_numbered(links):
+    assert webapp.link_target(collection("album"))["numbered"] is True
+    for kind in ("playlist", "track"):
+        assert webapp.link_target(collection(kind))["numbered"] is False
+
+
+SRC = "spotify:playlist:abcdefghijklmnopqrstuv"
+
+
+def rows(*uris):
+    return [{"Track URI": u, "Track Name": f"Song {u}", "Artist Name(s)": "A"} for u in uris]
+
+
+@pytest.fixture
+def synced(monkeypatch):
+    """A synced playlist "Mix" whose CSV holds songs a and b; the queue is captured."""
+    added = []
+    monkeypatch.setattr(webapp.queue, "add", lambda job: added.append(job) or 1)
+    monkeypatch.setattr(webapp.queue, "has_csv", lambda path: False)
+    webapp.sync_store.add(SRC, "Mix", "Mix", 320, "mp3")
+    spotify_link.write_csv(spotify_link.Collection("playlist", "x", "Mix", "", rows("a", "b"), 2, 2),
+                           webapp.playlist_csv_path("Mix"))
+    return added
+
+
+def serve(monkeypatch, uris, total=None):
+    col = spotify_link.Collection("playlist", "x", "Mix", "", rows(*uris), total or len(uris), len(uris))
+    monkeypatch.setattr(webapp.spotify_link, "read", lambda link, session=None: col)
+
+
+def test_sync_with_no_changes_queues_nothing(synced, monkeypatch):
+    serve(monkeypatch, ["a", "b"])
+    assert webapp.sync_check(webapp.sync_store.get(SRC)) == "no changes"
+    assert synced == []
+
+
+def test_sync_queues_new_songs_with_the_saved_settings(synced, monkeypatch):
+    serve(monkeypatch, ["a", "b", "c", "d"])
+    assert webapp.sync_check(webapp.sync_store.get(SRC)) == "2 new songs, queued"
+    (job,) = synced
+    assert (job.name, job.bitrate, job.numbered, job.source) == ("Mix", 320, False, "sync")
+    _, csv_rows = webapp.core.read_playlist_csv(webapp.playlist_csv_path("Mix"))
+    assert [r["Track URI"] for r in csv_rows] == ["a", "b", "c", "d"]
+    e = webapp.sync_store.get(SRC)
+    assert (e["added"], e["songs"], e["error"]) == (2, 4, "")
+
+
+def test_sync_now_always_queues_to_retry_failures(synced, monkeypatch):
+    serve(monkeypatch, ["a", "b"])
+    assert webapp.sync_check(webapp.sync_store.get(SRC), force=True) == "queued"
+    assert len(synced) == 1
+
+
+def test_sync_skips_a_playlist_already_in_the_queue(synced, monkeypatch):
+    monkeypatch.setattr(webapp.queue, "has_csv", lambda path: True)
+    assert webapp.sync_check(webapp.sync_store.get(SRC)) == "already in the queue"
+
+
+def test_sync_through_the_account_trusts_an_unchanged_snapshot(synced, monkeypatch):
+    monkeypatch.setattr(type(webapp.spotify), "connected", property(lambda self: True))
+    monkeypatch.setattr(webapp.spotify, "playlist_snapshot", lambda pid: "v1")
+    webapp.sync_store.update(SRC, snapshot="v1")
+
+    def no_read(*a, **k):
+        raise AssertionError("an unchanged playlist is not read")
+
+    monkeypatch.setattr(webapp.spotify_link, "read_with_account", no_read)
+    assert webapp.sync_check(webapp.sync_store.get(SRC)) == "no changes"
+
+
+def test_a_failed_check_is_recorded(synced, monkeypatch):
+    def down(link, session=None):
+        raise spotify_link.LinkError("Could not reach Spotify: timeout")
+
+    monkeypatch.setattr(webapp.spotify_link, "read", down)
+    assert webapp.sync_check(webapp.sync_store.get(SRC)).startswith("could not check")
+    assert "timeout" in webapp.sync_store.get(SRC)["error"]
+
+
+def test_pasting_a_playlist_link_syncs_it_unless_told_not_to(client, links, monkeypatch):
+    monkeypatch.setattr(webapp.queue, "add", lambda job: 1)
+    links["col"] = collection("playlist", name="Mix", artist="Someone")
+    client.post("/api/link/download", data={"link": ALBUM_URL.replace("album", "playlist"), "sync": "0"})
+    assert webapp.sync_store.all() == []
+    client.post("/api/link/download", data={"link": ALBUM_URL.replace("album", "playlist")})
+    (e,) = webapp.sync_store.all()
+    assert (e["source"], e["folder"], e["songs"]) == (SRC, "Mix", 2)
+    assert state(client)["sync"]["items"][0]["name"] == "Mix"
+
+
+def test_stop_syncing(client, synced):
+    assert client.post("/api/sync/remove", data={"source": SRC}).status_code == 200
+    assert webapp.sync_store.all() == []
+    assert client.post("/api/sync/now", data={"source": SRC}).status_code == 404

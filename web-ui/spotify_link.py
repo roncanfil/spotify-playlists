@@ -93,6 +93,8 @@ class Collection:
     via: str = "public"
     # Why the account could not read it, when the public pages were used instead.
     fallback: str = ""
+    # Spotify's version id of a playlist read through the account, for sync.
+    snapshot: str = ""
 
     @property
     def truncated(self):
@@ -287,7 +289,8 @@ def read_with_account(link, client):
     if not _playable(rows):
         raise LinkError(f"That {'song' if link.kind == 'track' else link.kind} has no tracks to download.")
     return Collection(link.kind, link.id, entry["name"], entry["artist"], _playable(rows),
-                      len(rows), len(rows), image=entry["image"], via="account")
+                      len(rows), len(rows), image=entry["image"], via="account",
+                      snapshot=entry.get("snapshot", ""))
 
 
 

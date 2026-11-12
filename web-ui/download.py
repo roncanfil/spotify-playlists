@@ -11,7 +11,8 @@ import subprocess
 
 import match
 from sources import (
-    AudioInfo, Cancelled, Request, convert, honest_bitrate, parse_duration_ms, probe_audio,
+    MAX_DURATION_DIFF, AudioInfo, Cancelled, Rejected, Request, check_length, convert,
+    honest_bitrate, mmss, parse_duration_ms, probe_audio,
 )
 
 
@@ -717,6 +718,59 @@ def describe_source(entry):
     return f"{acodec} {rate} (audio-only, format {fmt_id})", False
 
 
+# Search results looked at when Spotify's length is known. The plain audio
+# upload ("Artist - Topic") is nearly always in the first few.
+LENGTH_SEARCH_RESULTS = 8
+
+
+def pick_by_length(query, track):
+    """
+    (watch URL, None) for the first search result that is the track's length
+    and not another version of it, or (None, reason) when none is. One search
+    request; nothing is downloaded. YouTube's own order is kept, because its
+    first fitting result is usually the official upload.
+    """
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "logger": _QuietLogger(),
+        "extract_flat": "in_playlist",
+        "skip_download": True,
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(f"ytsearch{LENGTH_SEARCH_RESULTS}:{query}", download=False)
+    entries = [e for e in (info or {}).get("entries") or [] if isinstance(e, dict)]
+    if not entries:
+        return None, f"No YouTube result for {query!r}"
+    wanted = match.norm(track.title)
+    closest = None
+    for e in entries:
+        url = e.get("url") or e.get("webpage_url")
+        if not url and e.get("id"):
+            url = f"https://www.youtube.com/watch?v={e['id']}"
+        title = match.norm(e.get("title") or "")
+        if not url or any(
+            match.has_words(title, w) and not match.has_words(wanted, w)
+            for w in match.VERSION_WORDS
+        ):
+            continue
+        length = e.get("duration")
+        if not length:
+            # Live streams and some shorts list no length; nothing to check.
+            continue
+        diff = abs(float(length) - track.duration)
+        if diff <= MAX_DURATION_DIFF:
+            return url, None
+        if closest is None or diff < closest[0]:
+            closest = (diff, float(length), e.get("title") or url)
+    if closest is None:
+        return None, f"No YouTube result for {query!r} is the song itself (only other versions)"
+    return None, (
+        f"No YouTube result for {query!r} is the right length: Spotify says "
+        f"{mmss(track.duration)}, the closest is {mmss(closest[1])} ({closest[2]})"
+    )
+
+
 class YouTubeSource:
     """
     YouTube via yt-dlp: always available, every output format. The last
@@ -746,15 +800,31 @@ class YouTubeSource:
         used_fallback = False
         used_query = query
         last_exc = None
+        duration = req.track.duration if req.track else 0
+        misses = []
         tried = search_queries(query)
         for candidate in tried:
+            # With Spotify's length known, pick the video first, from a short
+            # list, so a music video with a long intro or a live take is passed
+            # over for the plain audio upload that is nearly always among the
+            # first results. Without it, the first result, as always.
+            target = f"ytsearch1:{candidate}"
+            if duration:
+                try:
+                    target, why = pick_by_length(candidate, req.track)
+                except Exception as e:
+                    last_exc = e
+                    break
+                if target is None:
+                    misses.append(why)
+                    continue
             for player_client in (None, FALLBACK_PLAYER_CLIENT):
                 opts = create_ydl_opts(
                     output_dir, basename, bitrate, audio_format, player_client
                 )
                 try:
                     with yt_dlp.YoutubeDL(opts) as ydl:
-                        info = ydl.extract_info(f"ytsearch1:{candidate}", download=True)
+                        info = ydl.extract_info(target, download=True)
                     entry = _first_video_entry(info)
                     last_exc = None
                     used_fallback = player_client is not None
@@ -777,6 +847,8 @@ class YouTubeSource:
         if last_exc is not None:
             raise last_exc
         if entry is None:
+            if misses:
+                raise LookupError(misses[0])
             extra = "" if len(tried) == 1 else f" (also tried {tried[-1]!r})"
             raise LookupError(f"No YouTube result for {query!r}{extra}")
 
@@ -784,6 +856,11 @@ class YouTubeSource:
         source_label, is_muxed = describe_source(entry)
 
         out_path = req.target_path
+        if duration:
+            # The length YouTube's search listed is checked again on the file
+            # itself, before any encoding: a wrong recording is worse than a
+            # missing one.
+            self._check_file_length(entry, out_path if audio_format != "mp3" else None, duration)
         if audio_format == "mp3":
             source_label += self._encode(entry, req)
         if not os.path.isfile(out_path):
@@ -803,6 +880,26 @@ class YouTubeSource:
             "used_query": used_query,
             "comment": youtube_comment(youtube_url),
         }
+
+    def _check_file_length(self, entry, path, duration):
+        """
+        Raise LookupError, deleting the download, when the file is not the
+        track's length. `path` is the finished file, or None for YouTube's raw
+        audio (MP3 output). A file ffprobe cannot read is left for the next
+        step to report.
+        """
+        path = path or _downloaded_path(entry)
+        info = probe_audio(path) if path and os.path.isfile(path) else None
+        if info is None or not info.length:
+            return
+        try:
+            check_length(info, duration)
+        except Rejected as e:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            raise LookupError(f"the YouTube match is the wrong recording: {e}") from None
 
     def _encode(self, entry, req):
         """

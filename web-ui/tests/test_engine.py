@@ -211,11 +211,18 @@ def test_default_sources_is_youtube_alone_with_no_p2p_configured():
 # ---------------------------------------------------------------- YouTube
 
 
+@pytest.fixture(autouse=True)
+def default_results():
+    FakeYDL.results = [("Enya - Orinoco Flow", 30, "abc123")]
+
+
 class FakeYDL:
     """Stands in for yt_dlp.YoutubeDL: "downloads" a fixture to outtmpl."""
 
     fixture = None
     searches = []
+    # What a flat search lists: (title, seconds, video id).
+    results = [("Enya - Orinoco Flow", 30, "abc123")]
 
     def __init__(self, opts):
         self.opts = opts
@@ -228,6 +235,11 @@ class FakeYDL:
 
     def extract_info(self, url, download=True):
         FakeYDL.searches.append(url)
+        if not download:
+            return {"entries": [
+                {"title": t, "duration": d, "url": f"https://www.youtube.com/watch?v={i}"}
+                for t, d, i in FakeYDL.results
+            ]}
         # With no postprocessor (MP3 output) yt-dlp leaves YouTube's own audio,
         # here Opus in WebM; the app encodes it.
         ext = "m4a" if self.opts["postprocessors"] else "webm"
@@ -246,7 +258,11 @@ def test_youtube_track_is_tagged_and_reported(playlist, tmp_path, audio, monkeyp
     monkeypatch.setattr(core.yt_dlp, "YoutubeDL", FakeYDL)
     events = run(playlist, tmp_path, None)
     (done,) = of(events, "track_done")
-    assert FakeYDL.searches == ["ytsearch1:Enya - Orinoco Flow"]
+    # Spotify's length is known, so the video is picked from a short search
+    # list and then downloaded by its address.
+    assert FakeYDL.searches == [
+        "ytsearch8:Enya - Orinoco Flow", "https://www.youtube.com/watch?v=abc123",
+    ]
     assert {k: done[k] for k in ("youtube_url", "source_label", "is_muxed", "used_fallback", "used_query")} == {
         "youtube_url": "https://www.youtube.com/watch?v=abc123",
         "source_label": "opus 130 kbps (audio-only, format 251), encoded to 160 kbps",
@@ -278,3 +294,50 @@ def test_youtube_is_never_encoded_above_its_source(playlist, tmp_path, audio, mo
     assert sorted(os.listdir(os.path.dirname(done["path"]))) == [
         "Enya - 02 - Orinoco Flow.mp3", "mix.m3u",
     ]
+
+
+@needs_ffmpeg
+def test_youtube_passes_over_results_of_the_wrong_length_or_version(playlist, tmp_path, audio, monkeypatch):
+    FakeYDL.fixture, FakeYDL.searches = audio["opus_webm"], []
+    FakeYDL.results = [
+        ("Enya - Orinoco Flow (Official Video)", 75, "video"),
+        ("Enya - Orinoco Flow (Live)", 31, "live"),
+        ("Orinoco Flow", 29, "topic"),
+    ]
+    monkeypatch.setattr(core.yt_dlp, "YoutubeDL", FakeYDL)
+    (done,) = of(run(playlist, tmp_path, None), "track_done")
+    assert FakeYDL.searches[-1] == "https://www.youtube.com/watch?v=topic"
+    assert done["youtube_url"] == "https://www.youtube.com/watch?v=abc123"
+
+
+def test_youtube_with_no_result_of_the_right_length_fails_and_says_why(playlist, tmp_path, monkeypatch):
+    FakeYDL.searches = []
+    FakeYDL.results = [("Enya - Orinoco Flow (Official Video)", 75, "video")]
+    monkeypatch.setattr(core.yt_dlp, "YoutubeDL", FakeYDL)
+    (err,) = of(run(playlist, tmp_path, None), "track_error")
+    assert "Spotify says 0:30, the closest is 1:15" in err["error"]
+    # Nothing was downloaded.
+    assert FakeYDL.searches == ["ytsearch8:Enya - Orinoco Flow"]
+
+
+@needs_ffmpeg
+def test_youtube_file_of_the_wrong_length_is_deleted(playlist, tmp_path, audio, monkeypatch):
+    # The search listed the right length, but the file is 60 s.
+    FakeYDL.fixture, FakeYDL.searches = audio["long_mp3"], []
+    monkeypatch.setattr(core.yt_dlp, "YoutubeDL", FakeYDL)
+    (err,) = of(run(playlist, tmp_path, None), "track_error")
+    assert "wrong recording" in err["error"] and "1:00 long" in err["error"]
+    assert [f for f in os.listdir(tmp_path / "music" / "mix") if not f.endswith(".m3u")] == []
+
+
+def test_youtube_without_a_length_takes_the_first_result(tmp_path, audio, monkeypatch):
+    if not os.path.exists(audio["opus_webm"]):
+        pytest.skip("ffmpeg not on PATH")
+    csv_path = write_csv(
+        tmp_path / "mix.csv",
+        [["Orinoco Flow", "Enya", "Watermark", "1988-09-19", "2", ""]],
+    )
+    FakeYDL.fixture, FakeYDL.searches = audio["opus_webm"], []
+    monkeypatch.setattr(core.yt_dlp, "YoutubeDL", FakeYDL)
+    (done,) = of(run(csv_path, tmp_path, None), "track_done")
+    assert FakeYDL.searches == ["ytsearch1:Enya - Orinoco Flow"]

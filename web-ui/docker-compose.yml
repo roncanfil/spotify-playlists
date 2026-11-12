@@ -27,10 +27,21 @@ services:
       AUTO_UPDATE_YTDLP: "1"
 
       BGUTIL_POT_BASE_URL: http://bgutil-provider:4416
+
+      # Soulseek, tried before YouTube for real 320 kbps and lossless files.
+      # Optional: uncomment these three, the slskd service, its volumes at the
+      # bottom, and the p2p-downloads line under volumes just below. The API
+      # key must match the one on the slskd service.
+      # SLSKD_URL: http://slskd:5030
+      # SLSKD_API_KEY: ""
+      # SLSKD_DOWNLOADS_DIR: /downloads
     volumes:
       # Your library, and the only path to set. One folder per playlist,
       # holding its tracks, its .csv and its .m3u.
       - ./music:/music
+      # Where the P2P sidecars put finished downloads, before the app converts
+      # them into the playlist folder. Not a host path: Docker manages it.
+      # - p2p-downloads:/downloads
     depends_on:
       - bgutil-provider
 
@@ -42,3 +53,35 @@ services:
     restart: unless-stopped
     expose:
       - "4416"
+
+  # Soulseek client the app drives over HTTP. Needs a Soulseek account: any
+  # username and password; the first login creates it. Shares nothing unless
+  # you add a share (deploy/README.md), and some peers refuse non-sharers.
+  # slskd:
+  #   image: slskd/slskd:0.26.2
+  #   container_name: slskd
+  #   restart: unless-stopped
+  #   environment:
+  #     SLSKD_SLSK_USERNAME: ""
+  #     SLSKD_SLSK_PASSWORD: ""
+  #     # 16 to 255 characters; the same value as SLSKD_API_KEY above.
+  #     SLSKD_API_KEY: ""
+  #     SLSKD_DOWNLOADS_DIR: /downloads
+  #     # slskd's own web UI login, used only if you publish port 5030 below.
+  #     # It defaults to slskd / slskd (blank is refused), so set both first.
+  #     # SLSKD_USERNAME: slskd
+  #     # SLSKD_PASSWORD: change-me
+  #   ports:
+  #     # Peers connect in on this port. Forward it on your router for more
+  #     # and faster results; it works without, less well.
+  #     - "50300:50300"
+  #     # Uncomment to reach slskd's own web UI at http://<host>:5030.
+  #     # - "5030:5030"
+  #   volumes:
+  #     - slskd-data:/app
+  #     - p2p-downloads:/downloads
+
+# Named volumes for the P2P sidecars. Uncomment with the slskd service.
+# volumes:
+#   slskd-data:
+#   p2p-downloads:

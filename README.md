@@ -1,7 +1,8 @@
 # Spotify playlists to MP3
 
-Takes a Spotify playlist and produces a folder of tagged MP3s, sourcing the
-audio from YouTube.
+Takes a Spotify playlist and produces a folder of tagged MP3s. The audio comes
+from YouTube, or, if you add the optional Soulseek sidecar, from Soulseek first
+for real 320 kbps and lossless sources, with YouTube as the fallback.
 
 ## Layout
 
@@ -53,9 +54,14 @@ the Spotify redirect URI.
   Spotify.
 - Queue tab: one job at a time with live progress, filters for Saved, Skipped
   and Failed, a separate list of failures with their errors, and a per-track
-  history for finished playlists that sorts failures first.
-- Settings tab: MP3 at 128, 192 or 320 kbps, or M4A stream copy, plus the
-  yt-dlp updater.
+  history for finished playlists that sorts failures first. Each saved track
+  shows which source it came from.
+- Settings tab: MP3 at 128, 192 or 320 kbps, or M4A stream copy; the audio
+  sources with their status and the order they are tried in; and the yt-dlp
+  updater.
+- Optional Soulseek source: see
+  [`deploy/README.md`](deploy/README.md#soulseek-optional) for the account,
+  port forwarding and sharing.
 - Optional password: set `APP_PASSWORD` and the app shows a login page.
 
 ### What you get on disk
@@ -73,7 +79,8 @@ music/
 
 Tracks you already have are skipped, so re-runs only fetch what is missing.
 Files get full tags: title, artist, album, album artist, track number, year,
-genre, and the source YouTube URL. The `.m3u` uses relative paths, so the
+genre, and a comment saying where the audio came from (the YouTube URL, or the
+Soulseek peer). The `.m3u` uses relative paths, so the
 folder stays playable if you move it.
 
 ## When tracks start failing
@@ -95,5 +102,7 @@ running. More in [`deploy/README.md`](deploy/README.md).
 
 ## Legal notice
 
-For personal use only. Respect copyright, YouTube's and Spotify's terms, and
-rights holders. Only take what you are entitled to use.
+For personal use only. Respect copyright, the terms of YouTube, Spotify and
+Soulseek, and rights holders. On Soulseek, peers see your IP address, and
+sharing a folder distributes it to others. Only take, and only share, what you
+are entitled to use.

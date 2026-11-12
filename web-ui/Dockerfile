@@ -22,7 +22,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # download.py is the engine; app.py is the web layer around it.
-COPY download.py spotify.py app.py entrypoint.sh ./
+COPY download.py sources.py match.py slskd.py spotify.py app.py entrypoint.sh ./
 COPY templates/ ./templates/
 RUN chmod +x /app/entrypoint.sh
 

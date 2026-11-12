@@ -1,0 +1,2 @@
+# Test-only dependencies; the image does not install these.
+pytest>=8

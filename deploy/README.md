@@ -153,6 +153,127 @@ If your own playlists work and followed ones do not, that is the account
 restriction rather than a bug here. A quota extension request on the Spotify
 dashboard is the only fix.
 
+## Soulseek (optional)
+
+YouTube tops out near 130 kbps. Soulseek is a peer-to-peer network where people
+share their own music collections, so it usually has real 320 kbps MP3s and
+lossless files. With it set up, every track is tried there first and YouTube
+becomes the fallback for whatever Soulseek cannot supply. Nothing changes until
+you set it up.
+
+The app does not speak Soulseek itself. A second container,
+[slskd](https://github.com/slskd/slskd), holds the account and the
+connections, and the app drives it over HTTP. Both containers share a Docker
+volume for finished downloads, so your music folder is still the only path you
+set.
+
+Soulseek is used for MP3 output only. M4A is a straight copy of YouTube's own
+stream, which is the point of choosing it, so it keeps coming from YouTube.
+
+### Setting it up
+
+1. Choose a Soulseek username and password. There is no sign-up: the first
+   login creates the account. Use a password you use nowhere else. If someone
+   else already has the name, the login fails and Settings shows Soulseek as
+   not logged in; pick another.
+2. Make an API key, 16 to 255 characters. The app uses it to talk to slskd.
+
+   ```bash
+   openssl rand -hex 24
+   ```
+
+3. In the compose file, uncomment:
+   - `SLSKD_URL`, `SLSKD_API_KEY` and `SLSKD_DOWNLOADS_DIR` on the app,
+   - the `- p2p-downloads:/downloads` line under the app's volumes,
+   - the whole `slskd:` service,
+   - the `volumes:` block at the bottom.
+4. Fill in `SLSKD_SLSK_USERNAME`, `SLSKD_SLSK_PASSWORD`, and the same API key
+   on both services.
+5. `docker compose up -d`.
+
+The Settings tab then lists Soulseek as **Connected**, with the account it is
+logged in as. **Error** comes with the reason, such as slskd being unreachable,
+a wrong API key, or a failed login. Settings is also where you set the order:
+move YouTube to the top and Soulseek is only asked for what YouTube cannot
+find.
+
+### Port forwarding
+
+slskd listens for other peers on TCP port 50300. Forward that port on your
+router to the machine running Docker. It works without forwarding, but less
+well. A peer behind its own firewall can then neither reach you nor be reached,
+and its downloads fail within seconds with "the peer did not answer". The app
+moves on to the next peer when that happens, and falls back to YouTube after a
+few. With the port forwarded, far fewer peers fail that way.
+
+The compose file publishes the port already. Only the router step is yours. If
+another app on the host already uses 50300, pick a new number and use it in
+three places: both sides of the port mapping (`"50301:50301"`), slskd's
+`SLSKD_SLSK_LISTEN_PORT`, and the router. slskd tells other peers which port to
+use, so the container's port and the host's must be the same.
+
+### Sharing
+
+By default slskd shares nothing. Soulseek works on reciprocity, and some peers
+refuse or deprioritise people who share nothing. slskd itself has a "leechers"
+group for exactly this. Expect some downloads to sit queued or be refused. The
+app stops waiting after 60 seconds and tries the next peer, so the cost is time
+rather than failures.
+
+To share, mount a folder into slskd read-only and name it. Sharing your library
+means other people download from you. Read the legal notice below first.
+
+```yaml
+  slskd:
+    environment:
+      SLSKD_SHARED_DIR: /music
+      # Belt and braces: slskd 0.26.2 already skips hidden folders, so the
+      # Spotify token in .spotify-playlists/ is not shared, but this keeps it
+      # that way if a later version changes.
+      SLSKD_SHARE_FILTER: '\.spotify-playlists'
+    volumes:
+      - ./music:/music:ro       # the same host path as the app's music mount
+```
+
+Use the same host path as the app's `/music` line. On CasaOS that means the
+absolute path.
+
+### slskd's own web UI
+
+Not needed day to day, but useful for seeing transfers and searches as they
+happen. Set `SLSKD_USERNAME` and `SLSKD_PASSWORD` on the slskd service, because
+the default is `slskd` / `slskd` and a blank password stops slskd from
+starting. Then publish port 5030 and open `http://<host>:5030`.
+
+### How it behaves
+
+- **Search limits.** Soulseek bans an account for 30 minutes after more than 34
+  searches in 220 seconds. The app spaces its searches to stay under 30 per 240
+  seconds, at most two per track, so a long playlist pauses between searches
+  now and then rather than risking the ban. Searches you make in slskd's own UI
+  count toward the same limit, and the app takes them into account.
+- **Picking a file.** Results are ranked by how well the name and length match
+  the Spotify track, then by sound quality, then by how soon the peer can send.
+  Up to four files are tried per track before it falls back to YouTube.
+- **Wrong recordings.** A file more than 10 seconds longer or shorter than
+  Spotify's version is rejected after download and the next one is tried. That
+  catches live takes, extended mixes and clipped rips that the name alone does
+  not.
+- **Quality.** Nothing is upscaled. An MP3 at or below your chosen bitrate
+  keeps its audio untouched; only its tags are replaced. Higher-bitrate MP3s and lossless files are
+  encoded down to it. Lossy files under 128 kbps are refused, since YouTube does
+  as well.
+- **Tags.** The peer's own tags and cover art are dropped, and the file is
+  tagged from the playlist like any other. The comment names the source, as in
+  `Source: Soulseek, peer someone`, where YouTube tracks keep their
+  `Original YouTube URL`.
+- **After the host sleeps.** slskd can keep saying it is logged in while every
+  search comes back empty. After three empty searches in a row the app makes it
+  reconnect.
+- **Version.** The compose file pins slskd to 0.26.2, the version this was
+  tested against. Its API has quirks the app works around, so move to a newer
+  one deliberately rather than with `:latest`.
+
 ## Publishing a new image (maintainers)
 
 Tagging is all it takes.
@@ -182,3 +303,15 @@ Two images, from two places:
 To drop the sidecar, delete that service, its `depends_on` entry, and
 `BGUTIL_POT_BASE_URL`. Everything still works, you will just see more bot
 checks.
+
+If you enable Soulseek, there is a third: `slskd/slskd`, from Docker Hub, which
+publishes amd64 and arm64.
+
+## Legal notice
+
+For personal use only. Respect copyright and the terms of YouTube, Spotify and
+Soulseek. Downloading music you have no right to is illegal in many countries,
+whichever network it comes from. On Soulseek, peers see your IP address, and
+sharing a folder distributes its contents to other people, which carries more
+legal exposure than downloading. Only take, and only share, what you are
+entitled to.

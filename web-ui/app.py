@@ -8,6 +8,7 @@ playlist's CSV, its tracks and its .m3u, plus a job on one serial queue.
 """
 
 import functools
+import json
 import os
 import re
 import secrets
@@ -26,6 +27,7 @@ from flask import (
 # download.py in this folder is the engine: search, download, transcode, tag.
 # It also still runs standalone as a deprecated CLI; see ../cli/README.md.
 import download as core
+import slskd
 import spotify as sp
 
 app = Flask(__name__)
@@ -240,6 +242,8 @@ class Job:
         self.failed = 0
         self.current = None
         self.events = []
+        # Saved tracks per source label, for the Recent row.
+        self.by_source = {}
         self.queued_at = time.time()
         self.started_at = None
         self.finished_at = None
@@ -253,10 +257,11 @@ class Job:
     def cancel(self):
         self._cancel.set()
 
-    def _add(self, kind, text, detail=None):
+    def _add(self, kind, text, detail=None, source=None):
         with self._lock:
             self.events.append(
-                {"kind": kind, "text": text, "detail": detail, "t": time.time()}
+                {"kind": kind, "text": text, "detail": detail, "source": source,
+                 "t": time.time()}
             )
             if len(self.events) > MAX_EVENTS:
                 del self.events[: len(self.events) - MAX_EVENTS]
@@ -283,6 +288,7 @@ class Job:
                 "skipped": self.skipped,
                 "failed": self.failed,
                 "current": self.current,
+                "by_source": dict(self.by_source),
                 "elapsed": round(
                     (self.finished_at or time.time()) - (self.started_at or time.time())
                 ),
@@ -302,6 +308,9 @@ class Job:
                 self.audio_format,
                 output_root=MUSIC_DIR,
                 should_cancel=self._cancel.is_set,
+                # Read when the job starts, so a change in Settings applies to
+                # the next job rather than reshuffling one mid-run.
+                sources=ordered_sources(),
             ):
                 self._handle(ev)
         except Exception as e:  # bad CSV, unreadable columns, disk errors
@@ -334,11 +343,16 @@ class Job:
             with self._lock:
                 self.current = ev["query"]
         elif kind == "track_done":
+            label = ev.get("source_name") or "YouTube"
             with self._lock:
                 self.downloaded += 1
                 self.done += 1
                 self.current = None
+                self.by_source[label] = self.by_source.get(label, 0) + 1
             detail = ev.get("source_label", "")
+            # The row carries the source as a tag; the detail adds who sent it.
+            if ev.get("peer"):
+                detail = f"{ev['peer']}: {detail}"
             if ev.get("used_fallback"):
                 detail += f" - SABR fallback via '{core.FALLBACK_PLAYER_CLIENT}'"
             # Say so when the full "A, B - Title" query found nothing and a
@@ -346,7 +360,11 @@ class Job:
             used_q = ev.get("used_query")
             if used_q and used_q != ev.get("query"):
                 detail += f" - matched on '{used_q}'"
-            self._add("ok", ev["query"], detail)
+            # Which sources missed before this one, so a YouTube copy of a
+            # track Soulseek could not find says so rather than passing silently.
+            for a in ev.get("attempts") or []:
+                detail += f" - {a['label']} missed: {a['error']}"
+            self._add("ok", ev["query"], detail, source=label)
         elif kind == "track_error":
             with self._lock:
                 self.failed += 1
@@ -466,6 +484,88 @@ class JobQueue:
 queue = JobQueue()
 
 
+# ---------------------------------------------------------------- sources
+
+SOURCE_ORDER_PATH = os.path.join(STATE_DIR, "sources.json")
+# Every source the app knows, in the default order: the P2P network for real
+# 320 kbps and lossless files first, YouTube as the fallback.
+KNOWN_SOURCES = {"soulseek": "Soulseek", "youtube": "YouTube"}
+SOURCE_NOTES = {
+    "soulseek": "MP3 output only. M4A always comes from YouTube.",
+    "youtube": "Always available. Audio tops out near 130 kbps.",
+}
+STATUS_TTL = 15
+_status_cache = {"at": 0.0, "items": None}
+_status_lock = threading.Lock()
+
+
+def load_source_order():
+    """
+    The saved order, cleaned: unknown names dropped, missing ones appended in
+    default order. A missing or broken file gives the default.
+    """
+    try:
+        with open(SOURCE_ORDER_PATH, encoding="utf-8") as fh:
+            saved = json.load(fh).get("order") or []
+    except (OSError, ValueError, AttributeError):
+        saved = []
+    order = [n for n in saved if n in KNOWN_SOURCES]
+    order += [n for n in KNOWN_SOURCES if n not in order]
+    return order
+
+
+def save_source_order(order):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    tmp = SOURCE_ORDER_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump({"order": order}, fh)
+    os.replace(tmp, SOURCE_ORDER_PATH)
+
+
+def ordered_sources():
+    """The configured sources, in the order set in Settings."""
+    order = load_source_order()
+    return sorted(
+        core.default_sources(),
+        key=lambda s: order.index(s.name) if s.name in order else len(order),
+    )
+
+
+def source_status():
+    """
+    {name: {state, message}} for every known source. Cached: the UI polls
+    every second or two while a job runs, and asking slskd that often would be
+    pointless load on it.
+    """
+    with _status_lock:
+        if _status_cache["items"] and time.time() - _status_cache["at"] < STATUS_TTL:
+            return _status_cache["items"]
+    state, message = slskd.SlskdClient.from_env().status(timeout=3)
+    items = {
+        "soulseek": {"state": state, "message": message},
+        "youtube": {"state": "connected", "message": f"yt-dlp {ytdlp_version()}"},
+    }
+    with _status_lock:
+        _status_cache.update(at=time.time(), items=items)
+    return items
+
+
+def sources_block():
+    status = source_status()
+    return {
+        "order": load_source_order(),
+        "items": [
+            {
+                "name": name,
+                "label": KNOWN_SOURCES[name],
+                "note": SOURCE_NOTES[name],
+                **status[name],
+            }
+            for name in load_source_order()
+        ],
+    }
+
+
 def ytdlp_version():
     try:
         import yt_dlp
@@ -568,9 +668,23 @@ def api_state():
                 "connected": spotify.connected,
                 "redirect_uri": SPOTIFY_REDIRECT_URI,
             },
+            "sources": sources_block(),
         }
     )
     return jsonify(snap)
+
+
+@app.post("/api/sources/order")
+@require_auth
+def api_sources_order():
+    order = [n.strip() for n in request.form.get("order", "").split(",") if n.strip()]
+    if sorted(order) != sorted(KNOWN_SOURCES):
+        return jsonify({"error": "List every source exactly once."}), 400
+    try:
+        save_source_order(order)
+    except OSError as e:
+        return jsonify({"error": f"Could not save the order: {e}"}), 500
+    return jsonify({"ok": True, "sources": sources_block()})
 
 
 @app.get("/api/job/<job_id>")

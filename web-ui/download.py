@@ -9,6 +9,9 @@ import time
 import shutil
 import subprocess
 
+import match
+from sources import Cancelled, Request, parse_duration_ms
+
 
 # YouTube's proof-of-origin requirement means yt-dlp's default player-client
 # rotation (visionos / android_vr / web / tv) gets either "This video is not
@@ -131,6 +134,16 @@ def sanitize_metadata_value(value):
     return s
 
 
+def youtube_comment(youtube_url):
+    """
+    The tag comment for a YouTube track. Worded as it always has been, so
+    files from YouTube are tagged the same as before peer-to-peer sources
+    existed; those name their network and peer instead (sources.P2PSource).
+    """
+    url = str(youtube_url or "").strip().replace("\x00", "")
+    return f"Original YouTube URL: {url or 'Unknown'}"
+
+
 def sanitize_comment_text(value):
     """Comment may contain URLs; keep '=' and most characters intact."""
     if value is None:
@@ -168,7 +181,7 @@ def _ffmpeg_metadata_args(
     meta_track_tag,
     meta_date,
     meta_genre,
-    youtube_url,
+    comment,
 ):
     """Flat -metadata args for ffmpeg; values sanitized for key=value argv."""
     meta_title = sanitize_metadata_value(meta_title)
@@ -178,7 +191,7 @@ def _ffmpeg_metadata_args(
     meta_date = sanitize_metadata_value(meta_date)
     meta_genre = sanitize_metadata_value(meta_genre)
     meta_track_tag = sanitize_metadata_value(meta_track_tag)
-    youtube_url = sanitize_comment_text(youtube_url) or "Unknown"
+    comment = sanitize_comment_text(comment)
 
     args = [
         "-metadata",
@@ -188,7 +201,7 @@ def _ffmpeg_metadata_args(
         "-metadata",
         f"album={meta_album}",
         "-metadata",
-        f"comment=Original YouTube URL: {youtube_url}",
+        f"comment={comment}",
     ]
     if meta_track_tag:
         args.extend(["-metadata", f"track={meta_track_tag}"])
@@ -210,7 +223,7 @@ def _write_tags_mutagen(
     meta_track_tag,
     meta_date,
     meta_genre,
-    youtube_url,
+    comment,
 ):
     from mutagen.id3 import COMM, TALB, TCON, TDRC, TIT2, TPE1, TPE2, TRCK, ID3
     from mutagen.mp3 import MP3
@@ -223,8 +236,7 @@ def _write_tags_mutagen(
     meta_track_tag = safe_meta_text(meta_track_tag)
     meta_date = safe_meta_text(meta_date)
     meta_genre = safe_meta_text(meta_genre)
-    youtube_url = safe_meta_text(youtube_url) or "Unknown"
-    comment = f"Original YouTube URL: {youtube_url}"
+    comment = safe_meta_text(comment)
 
     ext = os.path.splitext(path)[1].lower()
     enc = 3  # UTF-8 (ID3v2.4)
@@ -288,7 +300,7 @@ def _write_tags_ffmpeg(
     meta_track_tag,
     meta_date,
     meta_genre,
-    youtube_url,
+    comment,
 ):
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -302,7 +314,7 @@ def _write_tags_ffmpeg(
         meta_track_tag,
         meta_date,
         meta_genre,
-        youtube_url,
+        comment,
     )
     tmp_path = path + ".meta.tmp"
     try:
@@ -341,10 +353,11 @@ def write_playlist_tags(
     meta_track_tag,
     meta_date,
     meta_genre,
-    youtube_url,
+    comment,
 ):
     """
     Embed playlist-sourced tags: Mutagen first, ffmpeg remux fallback.
+    `comment` names where the audio came from; see youtube_comment().
     """
     try:
         _write_tags_mutagen(
@@ -356,7 +369,7 @@ def write_playlist_tags(
             meta_track_tag,
             meta_date,
             meta_genre,
-            youtube_url,
+            comment,
         )
     except Exception as e_mut:
         try:
@@ -369,7 +382,7 @@ def write_playlist_tags(
                 meta_track_tag,
                 meta_date,
                 meta_genre,
-                youtube_url,
+                comment,
             )
         except subprocess.CalledProcessError as e_ff:
             err = (e_ff.stderr or "").strip()
@@ -686,96 +699,108 @@ def describe_source(entry):
     return f"{acodec} {rate} (audio-only, format {fmt_id})", False
 
 
-def download_song(
-    output_dir,
-    query,
-    basename,
-    meta_title,
-    meta_artist,
-    meta_album,
-    meta_album_artist,
-    meta_track_tag,
-    meta_date,
-    meta_genre,
-    bitrate=DEFAULT_BITRATE,
-    audio_format=DEFAULT_FORMAT,
-):
+class YouTubeSource:
     """
-    Download one song and tag it. Returns a result dict describing the source;
-    raises on failure. Prints nothing -- callers own presentation.
+    YouTube via yt-dlp: always available, every output format. The last
+    source in the list, so it is the fallback when the P2P networks miss.
     """
-    # One extract_info(download=True) does the search, the download, and hands
-    # back the watch URL plus the chosen format -- the old code searched once to
-    # tag the URL and again to download, doubling requests to YouTube.
-    entry = None
-    used_fallback = False
-    used_query = query
-    last_exc = None
-    tried = search_queries(query)
-    for candidate in tried:
-        for player_client in (None, FALLBACK_PLAYER_CLIENT):
-            opts = create_ydl_opts(
-                output_dir, basename, bitrate, audio_format, player_client
-            )
-            try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(f"ytsearch1:{candidate}", download=True)
-                entry = _first_video_entry(info)
-                last_exc = None
-                used_fallback = player_client is not None
-                used_query = candidate
+
+    name = "youtube"
+    label = "YouTube"
+    formats = SUPPORTED_FORMATS
+
+    def check(self):
+        return None
+
+    def fetch(self, req):
+        """
+        Download one song to req.target_path. Returns a result dict describing
+        the source; raises on failure. Prints nothing -- callers own
+        presentation, and process_playlist writes the tags.
+        """
+        output_dir, basename = req.output_dir, req.basename
+        query, bitrate, audio_format = req.query, req.bitrate, req.audio_format
+        # One extract_info(download=True) does the search, the download, and
+        # hands back the watch URL plus the chosen format -- the old code
+        # searched once to tag the URL and again to download, doubling
+        # requests to YouTube.
+        entry = None
+        used_fallback = False
+        used_query = query
+        last_exc = None
+        tried = search_queries(query)
+        for candidate in tried:
+            for player_client in (None, FALLBACK_PLAYER_CLIENT):
+                opts = create_ydl_opts(
+                    output_dir, basename, bitrate, audio_format, player_client
+                )
+                try:
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(f"ytsearch1:{candidate}", download=True)
+                    entry = _first_video_entry(info)
+                    last_exc = None
+                    used_fallback = player_client is not None
+                    used_query = candidate
+                    break
+                except Exception as e:
+                    last_exc = e
+                    # Only the default attempt is worth retrying, and only when
+                    # the error says YouTube rejected the client rather than
+                    # the video.
+                    if player_client is None and _is_client_blocked_error(e):
+                        continue
+                    break
+            # A search that matched nothing raises nothing, so check for it
+            # here rather than letting it surface later as a missing file.
+            if entry is not None:
                 break
-            except Exception as e:
-                last_exc = e
-                # Only the default attempt is worth retrying, and only when the
-                # error says YouTube rejected the client rather than the video.
-                if player_client is None and _is_client_blocked_error(e):
-                    continue
+            if last_exc is not None:
                 break
-        # A search that matched nothing raises nothing, so check for it here
-        # rather than letting it surface later as a missing output file.
-        if entry is not None:
-            break
         if last_exc is not None:
-            break
-    if last_exc is not None:
-        raise last_exc
-    if entry is None:
-        extra = "" if len(tried) == 1 else f" (also tried {tried[-1]!r})"
-        raise LookupError(f"No YouTube result for {query!r}{extra}")
+            raise last_exc
+        if entry is None:
+            extra = "" if len(tried) == 1 else f" (also tried {tried[-1]!r})"
+            raise LookupError(f"No YouTube result for {query!r}{extra}")
 
-    youtube_url = (entry or {}).get("webpage_url") or "Unknown"
-    source_label, is_muxed = describe_source(entry)
+        youtube_url = (entry or {}).get("webpage_url") or "Unknown"
+        source_label, is_muxed = describe_source(entry)
 
-    out_path = os.path.join(output_dir, f"{basename}.{normalize_audio_format(audio_format)}")
-    if not os.path.isfile(out_path):
-        # The search matched and yt-dlp reported no error, so this is the
-        # extract/transcode step having produced nothing usable.
-        raise FileNotFoundError(
-            f"yt-dlp matched {youtube_url} but produced no "
-            f"{normalize_audio_format(audio_format)} file"
-        )
+        out_path = req.target_path
+        if not os.path.isfile(out_path):
+            # The search matched and yt-dlp reported no error, so this is the
+            # extract/transcode step having produced nothing usable.
+            raise FileNotFoundError(
+                f"yt-dlp matched {youtube_url} but produced no "
+                f"{normalize_audio_format(audio_format)} file"
+            )
 
-    write_playlist_tags(
-        out_path,
-        meta_title,
-        meta_artist,
-        meta_album,
-        meta_album_artist,
-        meta_track_tag,
-        meta_date,
-        meta_genre,
-        youtube_url,
-    )
+        return {
+            "path": out_path,
+            "youtube_url": youtube_url,
+            "source_label": source_label,
+            "is_muxed": is_muxed,
+            "used_fallback": used_fallback,
+            "used_query": used_query,
+            "comment": youtube_comment(youtube_url),
+        }
 
-    return {
-        "path": out_path,
-        "youtube_url": youtube_url,
-        "source_label": source_label,
-        "is_muxed": is_muxed,
-        "used_fallback": used_fallback,
-        "used_query": used_query,
-    }
+
+def default_sources(env=None):
+    """
+    The sources to try, in order: each peer-to-peer network whose sidecar is
+    configured, then YouTube. With no P2P variables set this is YouTube alone,
+    exactly as before those networks existed.
+    """
+    env = os.environ if env is None else env
+    out = []
+    if env.get("SLSKD_URL", "").strip():
+        # Imported here so a YouTube-only install never loads the P2P code.
+        import slskd
+        from sources import P2PSource
+
+        out.append(P2PSource(slskd.SlskdClient.from_env(env)))
+    out.append(YouTubeSource())
+    return out
 
 
 def resolve_columns(columns):
@@ -801,6 +826,10 @@ def resolve_columns(columns):
             columns, "Release Date", "Album Release Date", "Year", "Date"
         ),
         "genre": pick_column(columns, "Genres", "Genre"),
+        # Our own export writes "Track Duration (ms)", Exportify "Duration
+        # (ms)". Optional: only the P2P sources use it, to tell the song from
+        # a live take or an extended mix of the same name.
+        "duration": pick_column(columns, "Track Duration (ms)", "Duration (ms)"),
     }
     if not cols["track"] or not cols["artist"]:
         raise ValueError(
@@ -823,6 +852,7 @@ def process_playlist(
     audio_format=DEFAULT_FORMAT,
     output_root=".",
     should_cancel=None,
+    sources=None,
 ):
     """
     Run one playlist, yielding progress events.
@@ -830,6 +860,11 @@ def process_playlist(
     Shared by the CLI and the web UI so both behave identically -- the caller
     decides how to present each event. Event types: init, warning, skip,
     track_start, track_done, track_error, cancelled, summary.
+
+    `sources` is the ordered list to try for each track (default_sources()
+    when None); see sources.py for their shape. track_done names the source
+    that supplied the file, and both track_done and track_error carry
+    "attempts": the sources that failed before, each with its reason.
     """
     bitrate = normalize_bitrate(bitrate)
     audio_format = normalize_audio_format(audio_format)
@@ -853,6 +888,33 @@ def process_playlist(
     }
     for w in warnings:
         yield {"type": "warning", "message": w}
+
+    active = []
+    for source in default_sources() if sources is None else sources:
+        if audio_format not in source.formats:
+            continue
+        try:
+            problem = source.check()
+        except Exception as e:
+            problem = str(e) or type(e).__name__
+        if problem:
+            # Once per job, not once per track: a source that cannot work now
+            # will not start working halfway through the playlist.
+            yield {
+                "type": "warning",
+                "message": f"{source.label} skipped for this playlist: {problem}",
+            }
+            continue
+        active.append(source)
+    if not active:
+        raise ValueError(f"No audio source can produce {audio_format} files")
+    if not cols["duration"] and any(getattr(s, "uses_duration", False) for s in active):
+        yield {
+            "type": "warning",
+            "message": "No duration column found; files from "
+            + " and ".join(s.label for s in active if getattr(s, "uses_duration", False))
+            + " cannot be checked against the track's length.",
+        }
 
     downloaded = skipped = failed = 0
     # (filename, artist, title) in playlist order, for the .m3u at the end.
@@ -886,6 +948,7 @@ def process_playlist(
         genre = cell_str(row, cols["genre"]) if cols["genre"] else ""
 
         query = f"{artist} - {track_title}"
+        duration = parse_duration_ms(cell_str(row, cols["duration"]))
 
         if song_exists(output_dir, basename, ext):
             skipped += 1
@@ -906,10 +969,45 @@ def process_playlist(
             "album": album,
             "basename": basename,
         }
+        req = Request(
+            track=match.Track(artist=artist, title=track_title, duration=duration),
+            query=query,
+            output_dir=output_dir,
+            basename=basename,
+            bitrate=bitrate,
+            audio_format=audio_format,
+            should_cancel=should_cancel,
+        )
+        result, used, attempts, cancelled = None, None, [], False
+        for source in active:
+            try:
+                result = source.fetch(req)
+                used = source
+                break
+            except Cancelled:
+                cancelled = True
+                break
+            except Exception as e:
+                attempts.append(
+                    {"source": source.name, "label": source.label, "error": str(e)}
+                )
+        if cancelled:
+            yield {"type": "cancelled", "at": playlist_index}
+            break
+
         try:
-            result = download_song(
-                output_dir, query, basename, track_title, artist, album,
-                album_artist, track_tag, meta_date, genre, bitrate, audio_format,
+            if result is None:
+                # One source: its own message, worded as it always was. Several:
+                # each one's reason, so the queue shows why P2P missed too.
+                if len(attempts) == 1:
+                    raise RuntimeError(attempts[0]["error"])
+                raise RuntimeError(
+                    "; ".join(f"{a['label']}: {a['error']}" for a in attempts)
+                )
+            comment = result.pop("comment")
+            write_playlist_tags(
+                result["path"], track_title, artist, album, album_artist,
+                track_tag, meta_date, genre, comment,
             )
             downloaded += 1
             m3u_entries.append((f"{basename}.{ext}", artist, track_title))
@@ -919,6 +1017,9 @@ def process_playlist(
                 "query": query,
                 "basename": basename,
                 **result,
+                "source": used.name,
+                "source_name": used.label,
+                "attempts": attempts,
             }
         except Exception as e:
             failed += 1
@@ -927,6 +1028,7 @@ def process_playlist(
                 "index": playlist_index,
                 "query": query,
                 "error": str(e),
+                "attempts": attempts,
             }
 
     playlist_file = None
@@ -1053,7 +1155,13 @@ def main():
                     if ev.get("used_fallback")
                     else ""
                 )
-                print(f"   \U0001f50e Source: {ev['source_label']}{suffix}")
+                where = (
+                    "" if ev.get("source", "youtube") == "youtube"
+                    else f"{ev['source_name']}, {ev.get('peer', '')}: "
+                )
+                print(f"   \U0001f50e Source: {where}{ev['source_label']}{suffix}")
+                for a in ev.get("attempts") or []:
+                    print(f"   \u21aa {a['label']} missed: {a['error']}")
 
             elif kind == "track_error":
                 if spinner:

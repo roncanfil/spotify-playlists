@@ -496,6 +496,13 @@
   .note.warn svg { color:var(--warn); } .note.ok svg { color:var(--ok); }
   .note b { color:var(--ink); font-weight:620; }
   .kv { display:grid; grid-template-columns:auto 1fr; gap:6px 18px; font-size:13.5px; margin:0 0 16px; }
+  .srcs .nm { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .srcs .act { display:flex; gap:4px; }
+  .srcs .act .btn { width:32px; padding:0; justify-content:center; }
+  .srcs .act .down svg { transform:rotate(180deg); }
+  .srcs .sub { display:block; line-height:1.45; }
+  .srcs .sub .msg-err { color:var(--fail); }
+  .tl .src { height:18px; padding:0 7px; font-size:11px; margin-left:6px; vertical-align:1px; }
   .kv dt { color:var(--muted); margin:0; } .kv dd { margin:0; font-weight:580; font-variant-numeric:tabular-nums; }
 
   /* ------------------------------------------------------------ dialog */
@@ -706,6 +713,15 @@
         </div>
       </div>
       <div class="note" id="br-note"><svg class="i"><use href="#i-info"/></svg><span></span></div>
+    </div>
+
+    <div class="panel measure">
+      <h2>Audio sources</h2>
+      <p class="lede">Each track is tried from the top down, and the first source that finds it
+        wins. Applies to the whole server, from the next playlist that starts.</p>
+      <div class="rows srcs" id="srcs"><div class="empty left">Loading…</div></div>
+      <p class="fine" style="margin-top:10px">Setting up Soulseek, and what sharing means for it:
+        see <b>deploy/README.md</b>.</p>
     </div>
 
     <div class="panel measure">
@@ -1111,7 +1127,7 @@ TrackList.prototype.render = function (reset) {
   const sc = this.scroll, prevTop = sc.scrollTop, prevH = sc.scrollHeight;
   this.tbody.innerHTML = rows.length ? rows.map(e => `<tr>
       <td class="c-status"><span class="st ${e.kind}">${KIND_NAME[e.kind]}</span></td>
-      <td>${esc(e.text)}${e.detail ? `<div class="${e.kind === 'fail' ? 'err' : 'det'}">${esc(e.detail)}</div>` : ''}</td>
+      <td>${esc(e.text)}${e.source ? `<span class="pill src">${esc(e.source)}</span>` : ''}${e.detail ? `<div class="${e.kind === 'fail' ? 'err' : 'det'}">${esc(e.detail)}</div>` : ''}</td>
       <td class="c-order">${e.i + 1}</td>
     </tr>`).join('')
     : `<tr><td colspan="3"><div class="empty">${this.filter === 'all' ? 'No tracks yet.' : 'Nothing in this filter.'}</div></td></tr>`;
@@ -1199,7 +1215,7 @@ const openJobs = {};   // job id -> { events, list }
 const listSig = {};
 
 function jobSig(jobs, extra) {
-  return jobs.map(j => [j.id, j.state, j.done, j.downloaded, j.skipped, j.failed].join(':')).join(',') + '#' + extra;
+  return jobs.map(j => [j.id, j.state, j.done, j.downloaded, j.skipped, j.failed, JSON.stringify(j.by_source || {})].join(':')).join(',') + '#' + extra;
 }
 
 function renderPending(jobs) {
@@ -1220,6 +1236,11 @@ function renderPending(jobs) {
 }
 
 const STATE_ICON = { done: 'check', cancelled: 'x', error: 'warn' };
+// "2 Soulseek · 1 YouTube", only when the job used more than one source.
+const bySource = j => {
+  const e = Object.entries(j.by_source || {});
+  return e.length > 1 ? `<span class="num">${e.map(([k, n]) => `${n} ${esc(k)}`).join(' · ')}</span>` : '';
+};
 const STATE_LABEL = { done: 'Done', cancelled: 'Cancelled', error: 'Error' };
 
 function renderRecent(jobs) {
@@ -1238,7 +1259,7 @@ function renderRecent(jobs) {
       <div class="sub">
         <span>${esc(STATE_LABEL[st])}</span>
         <span class="fmt">${esc(j.format)}</span>
-        <span class="ok num">${j.downloaded} saved</span>
+        <span class="ok num">${j.downloaded} saved</span>${bySource(j)}
         <span class="skip num">${j.skipped} skipped</span>
         ${j.failed ? `<span class="pill fail num">${j.failed} failed</span>` : ''}
       </div>
@@ -1282,6 +1303,54 @@ function paintDetail(id) {
   st.list.update(st.events);
 }
 
+/* ------------------------------------------------------------ audio sources */
+const SRC_STATE = {
+  connected: ['ok', 'Connected'],
+  'not configured': ['skip', 'Not configured'],
+  error: ['fail', 'Error'],
+};
+let srcSig = null, srcOrder = [];
+
+function renderSources(block) {
+  if (!block) return;
+  const sig = JSON.stringify(block);
+  if (sig === srcSig) return;
+  srcSig = sig;
+  srcOrder = block.order || [];
+  const items = block.items || [];
+  $('srcs').innerHTML = items.map((it, i) => {
+    const [cls, word] = SRC_STATE[it.state] || SRC_STATE.error;
+    const msg = it.state === 'not configured'
+      ? 'Not set up. Add the slskd sidecar to use it.'
+      : esc(it.message || '');
+    return `<div class="row">
+      <span class="pos">${i + 1}</span>
+      <div class="nm">${esc(it.label)}<span class="pill ${cls}">${word}</span></div>
+      <div class="act">
+        <button class="btn ghost sm" type="button" data-move="${esc(it.name)}" data-dir="-1"
+          aria-label="Move ${esc(it.label)} up" ${i === 0 ? 'disabled' : ''}>${icon('sort')}</button>
+        <button class="btn ghost sm down" type="button" data-move="${esc(it.name)}" data-dir="1"
+          aria-label="Move ${esc(it.label)} down" ${i === items.length - 1 ? 'disabled' : ''}>${icon('sort')}</button>
+      </div>
+      <div class="sub"><span class="${it.state === 'error' ? 'msg-err' : ''}">${msg}</span><br>${esc(it.note || '')}</div>
+    </div>`;
+  }).join('');
+}
+
+$('srcs').addEventListener('click', async e => {
+  const b = e.target.closest('[data-move]');
+  if (!b || b.disabled) return;
+  const order = srcOrder.slice();
+  const i = order.indexOf(b.dataset.move), j = i + Number(b.dataset.dir);
+  if (i < 0 || j < 0 || j >= order.length) return;
+  [order[i], order[j]] = [order[j], order[i]];
+  try {
+    const r = await api('/api/sources/order', { order: order.join(',') });
+    renderSources(r.sources);
+    flash('Source order saved. It applies from the next playlist.', true);
+  } catch (err) { flash(err.message, false); }
+});
+
 /* ------------------------------------------------------------ yt-dlp update */
 $('btn-update').addEventListener('click', async () => {
   const b = $('btn-update'), lbl = b.querySelector('.lbl');
@@ -1310,6 +1379,7 @@ async function refresh() {
   $('signout').hidden = !d.auth_enabled;
   $('ytdlp').textContent = d.ytdlp || '…';
   $('appver').textContent = d.app_version || 'dev';
+  renderSources(d.sources);
 
   if (d.bitrate_notes && !Object.keys(NOTES).length) {
     NOTES = d.bitrate_notes; FMT_NOTES = d.format_notes || {}; renderOutput();

@@ -33,7 +33,6 @@ with. What is ours, not spotseek's, is marked "Not in spotseek" below.
     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
     IN THE SOFTWARE.
 
-See also THIRD_PARTY_NOTICES.md at the repository root.
 """
 
 import dataclasses

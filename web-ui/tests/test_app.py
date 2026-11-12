@@ -367,3 +367,32 @@ def test_saved_list_finds_playlists_and_albums_but_not_plain_folders():
     found = webapp.list_playlists()
     assert "Mix" in found and "Artist/Album" in found
     assert "Artist" not in found and "Artist/Loose" not in found
+
+
+def test_empty_slskd_folders_are_pruned_but_files_kept():
+    home = webapp.slsk_settings.home
+    empty = os.path.join(home, "incomplete", "peer", "Music", "Artist")
+    kept = os.path.join(home, "incomplete", "other")
+    os.makedirs(empty, exist_ok=True)
+    os.makedirs(kept, exist_ok=True)
+    open(os.path.join(kept, "file.part"), "w").close()
+    webapp.prune_slskd_folders()
+    assert not os.path.exists(os.path.join(home, "incomplete", "peer"))
+    assert os.path.isfile(os.path.join(kept, "file.part"))
+    assert os.path.isdir(os.path.join(home, "incomplete"))
+
+
+def test_rerunning_a_saved_album_names_its_artist(client, monkeypatch):
+    added = []
+    monkeypatch.setattr(webapp.queue, "add", lambda job: added.append(job) or 1)
+    path = webapp.playlist_csv_path("Artist/Album")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    open(path, "w").close()
+    r = client.post("/api/start", data={"playlist": "Artist/Album", "bitrate": "192"})
+    assert r.status_code == 200
+    assert (added[0].name, added[0].target_dir) == ("Artist \u2013 Album", os.path.dirname(path))
+
+
+def test_only_listed_folders_can_be_rerun(client):
+    r = client.post("/api/start", data={"playlist": "../etc", "bitrate": "192"})
+    assert r.status_code == 400

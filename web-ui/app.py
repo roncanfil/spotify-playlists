@@ -330,6 +330,7 @@ class Job:
                 self._handle(ev)
             if self.downloaded:
                 rescan_share()
+            prune_slskd_folders()
         except Exception as e:  # bad CSV, unreadable columns, disk errors
             with self._lock:
                 self.state = "error"
@@ -660,6 +661,25 @@ def rescan_share():
         soulseek_client().rescan_shares()
 
 
+def prune_slskd_folders():
+    """
+    Remove the empty folders slskd leaves behind. It recreates each peer's
+    folder path under incomplete/ for every download and keeps it after the
+    file is moved on, so a large library would collect thousands of them.
+    Only empty folders go, and only between jobs, which run one at a time.
+    """
+    for top in ("incomplete", os.path.join("downloads", "spotify-playlists")):
+        root = os.path.join(slsk_settings.home, top)
+        # Bottom-up, and emptiness checked on the spot: walk's own lists still
+        # name the subfolders removed a moment ago.
+        for path, _, _ in os.walk(root, topdown=False):
+            if path != root:
+                try:
+                    os.rmdir(path)  # fails, harmlessly, unless empty
+                except OSError:
+                    pass
+
+
 def ytdlp_version():
     try:
         import yt_dlp
@@ -939,7 +959,9 @@ def api_start():
         csv_path = playlist_csv_path(chosen)
         source = "saved"
 
-    job = Job(csv_path, bitrate, audio_format, source=source)
+    # An album folder reads "Artist – Album" in the queue, as when it was pasted.
+    name = chosen.replace("/", " \u2013 ") if source == "saved" else None
+    job = Job(csv_path, bitrate, audio_format, source=source, name=name)
     position = queue.add(job)
     return jsonify({"job": job.snapshot(with_events=False), "position": position})
 

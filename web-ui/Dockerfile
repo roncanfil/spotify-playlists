@@ -24,6 +24,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # download.py is the engine; app.py is the web layer around it.
 COPY download.py sources.py match.py slskd.py slskd_config.py spotify.py spotify_link.py sync.py app.py entrypoint.sh ./
 COPY templates/ ./templates/
+COPY static/ ./static/
 RUN chmod +x /app/entrypoint.sh
 
 # /data/ytdlp is a mounted volume ahead of site-packages, so yt-dlp upgrades

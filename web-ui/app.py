@@ -306,6 +306,7 @@ class Job:
                 "failed": self.failed,
                 "current": self.current,
                 "by_source": dict(self.by_source),
+                "finished_at": self.finished_at,
                 "elapsed": round(
                     (self.finished_at or time.time()) - (self.started_at or time.time())
                 ),

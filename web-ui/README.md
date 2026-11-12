@@ -286,6 +286,7 @@ spotify_link.py  pasted Spotify links, read from the public pages
 app.py         Flask API: auth, start/cancel/poll, source order, yt-dlp updater
 spotify.py     Spotify Web API client (PKCE, no client secret)
 templates/     single-page UI, no CDN, works offline on a LAN
+static/fonts/  Archivo, the UI's typeface, bundled (SIL Open Font License, OFL.txt)
 tests/         pytest, no network; see Tests below
 ```
 

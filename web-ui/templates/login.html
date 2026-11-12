@@ -6,74 +6,55 @@
 <meta name="color-scheme" content="light dark">
 <title>Sign in · Spotify Playlists</title>
 <style>
+  /* The app's Sleeve look: a blue field with the name set huge, a black-ruled card. */
+  @font-face { font-family:"Archivo"; font-weight:100 900; font-stretch:62% 125%; font-display:swap;
+    src:url("/static/fonts/archivo-latin.woff2") format("woff2"); }
   :root {
-    --bg:#f3f3f1; --surface:#ffffff; --surface-2:#f7f7f5; --ink:#161718; --ink-2:#4a4c51;
-    --muted:#797c83; --faint:#a4a7ad; --line:#e5e5e1; --line-2:#d3d4cf;
-    --accent:#168a46; --accent-hover:#127a3d; --accent-ink:#fff; --accent-ring:rgba(22,138,70,.28);
-    --fail:#c33a31; --fail-soft:rgba(195,58,49,.10);
-    --shadow:0 2px 6px rgba(20,20,20,.06), 0 24px 60px -28px rgba(20,20,20,.25);
+    --bg:#ffffff; --surface:#ffffff; --ink:#0b0b0f; --muted:#5a5f78; --faint:#9a9db0; --line-2:#0b0b0f;
+    --blue:#1b2bb5; --accent:#1b2bb5; --accent-ring:rgba(27,43,181,.3); --hot:#ff4d1f; --hot-hover:#f03d0f;
+    --fail:#c8102e; --fail-soft:rgba(200,16,46,.08);
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --bg:#0e0f11; --surface:#17181b; --surface-2:#1d1e22; --ink:#ecedee; --ink-2:#b6b8bd;
-      --muted:#868990; --faint:#5e6168; --line:#26272b; --line-2:#34363b;
-      --accent:#2ecc6f; --accent-hover:#3fd97e; --accent-ink:#052a14; --accent-ring:rgba(46,204,111,.32);
-      --fail:#f0736b; --fail-soft:rgba(240,115,107,.13);
-      --shadow:0 2px 8px rgba(0,0,0,.35), 0 30px 80px -30px rgba(0,0,0,.8);
-      color-scheme: dark;
-    }
+    :root { --bg:#0c0d12; --surface:#14151c; --ink:#f2f2f5; --muted:#9da1b5; --faint:#6b6f85; --line-2:#f2f2f5;
+      --blue:#2233c9; --accent:#8b98ff; --accent-ring:rgba(139,152,255,.35); --hot:#ff5a2c; --hot-hover:#ff7247;
+      --fail:#ff6b81; --fail-soft:rgba(255,107,129,.12); color-scheme: dark; }
   }
   *, *::before, *::after { box-sizing:border-box; }
-  body {
-    margin:0; min-height:100vh; min-height:100dvh; display:flex; align-items:center; justify-content:center;
-    padding:24px; background:var(--bg); color:var(--ink);
-    background-image:radial-gradient(ellipse 60% 50% at 50% -10%, rgba(30,215,96,.14), transparent 70%);
-    font:14.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
-    -webkit-font-smoothing:antialiased;
-  }
-  .card {
-    width:100%; max-width:360px; background:var(--surface); border:1px solid var(--line);
-    border-radius:18px; padding:28px 26px 24px; box-shadow:var(--shadow);
-  }
-  .mark {
-    width:44px; height:44px; border-radius:13px; display:grid; place-items:center; margin-bottom:18px;
-    background:linear-gradient(140deg, #1ed760 0%, #14883f 100%); color:#03210f;
-    box-shadow:inset 0 0 0 1px rgba(255,255,255,.18), 0 1px 2px rgba(0,0,0,.08);
-  }
-  .mark svg { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
-  h1 { margin:0 0 4px; font-size:19px; font-weight:650; letter-spacing:-.015em; }
-  p.sub { margin:0 0 20px; color:var(--muted); font-size:14px; }
-  label { display:block; font-size:12.5px; font-weight:620; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:7px; }
+  body { margin:0; min-height:100vh; min-height:100dvh; display:grid; grid-template-rows:auto 1fr;
+    background:var(--bg); color:var(--ink); font:430 15px/1.5 "Archivo", -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased; }
+  ::selection { background:var(--hot); color:#0b0b0f; }
+  .band { background:var(--blue); color:#fff; overflow:hidden; height:clamp(120px, 22vw, 240px); position:relative;
+    border-bottom:3px solid var(--line-2); }
+  .band span { position:absolute; left:clamp(10px, 2vw, 26px); bottom:-.12em; font-weight:900; font-stretch:62%;
+    font-size:clamp(100px, 21vw, 250px); line-height:.8; white-space:nowrap; text-transform:uppercase; }
+  .card { width:100%; max-width:380px; margin:clamp(24px, 6vh, 64px) auto; padding:0 16px; }
+  h1 { margin:0 0 4px; font-size:32px; font-weight:900; font-stretch:66%; line-height:1; text-transform:uppercase; }
+  h1 b { color:var(--hot); }
+  p.sub { margin:0 0 20px; color:var(--muted); font-size:15px; }
+  label { display:block; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.07em; margin-bottom:7px; }
   .field { position:relative; }
-  .field svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); width:16px; height:16px;
-    fill:none; stroke:var(--muted); stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
-  input[type=password] {
-    width:100%; height:44px; padding:0 12px 0 38px; font:inherit; font-size:15px; color:var(--ink);
-    background:var(--surface); border:1px solid var(--line-2); border-radius:10px;
-    transition:border-color .12s, box-shadow .12s;
-  }
+  .field svg { position:absolute; left:13px; top:50%; transform:translateY(-50%); width:17px; height:17px;
+    fill:none; stroke:var(--muted); stroke-width:2; pointer-events:none; }
+  input[type=password] { width:100%; height:50px; padding:0 12px 0 40px; font:inherit; font-size:16px; color:var(--ink);
+    caret-color:var(--hot); background:var(--surface); border:3px solid var(--line-2); border-radius:0; transition:border-color .12s, box-shadow .12s; }
   input[type=password]:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
-  button {
-    width:100%; height:44px; margin-top:14px; font:inherit; font-size:15px; font-weight:600; cursor:pointer;
-    color:var(--accent-ink); background:var(--accent); border:0; border-radius:10px; transition:background .12s, transform .08s;
-  }
-  button:hover { background:var(--accent-hover); }
+  button { width:100%; height:52px; margin-top:14px; font:inherit; font-size:15px; font-weight:800; letter-spacing:.04em;
+    text-transform:uppercase; cursor:pointer; color:#0b0b0f; background:var(--hot); border:3px solid var(--line-2);
+    border-radius:0; transition:background .12s, transform .08s; }
+  button:hover { background:var(--hot-hover); }
   button:active { transform:translateY(1px); }
-  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-  .err {
-    display:flex; align-items:center; gap:8px; margin:14px 0 0; padding:10px 12px; border-radius:10px;
-    font-size:13.5px; color:var(--fail); background:var(--fail-soft);
-  }
-  .err svg { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  button:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .err { display:flex; align-items:center; gap:8px; margin:14px 0 0; padding:10px 12px; border:2px solid var(--fail);
+    font-size:14px; font-weight:650; color:var(--fail); background:var(--fail-soft); }
+  .err svg { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:2; }
 </style>
 </head>
 <body>
+<div class="band" aria-hidden="true"><span>Sign in</span></div>
 <form class="card" method="post" action="/login">
-  <div class="mark" aria-hidden="true">
-    <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-  </div>
-  <h1>Spotify Playlists</h1>
+  <h1>Spotify Playlists<b>.</b></h1>
   <p class="sub">Enter the password to continue.</p>
 
   <label for="password">Password</label>

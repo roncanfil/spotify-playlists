@@ -1173,19 +1173,55 @@ _link_lock = threading.Lock()
 
 
 def read_link(text):
-    """The Collection for pasted text, from the cache when it is fresh."""
+    """
+    The Collection for pasted text, from the cache when it is fresh. Read
+    through the connected Spotify account when there is one, which has every
+    song and album, year and genre on each; from Spotify's public pages when
+    there is none, or when Spotify refuses the account (a Development Mode
+    app is refused playlists its owner did not create).
+    """
     link = spotify_link.parse(text)
+    connected = spotify.connected
+    key = (link.uri, connected)
     now = time.time()
     with _link_lock:
-        hit = _link_cache.get(link.uri)
+        hit = _link_cache.get(key)
         if hit and now - hit[0] < LINK_CACHE_TTL:
             return hit[1]
-    col = spotify_link.read(link)
+    col, why = None, ""
+    if connected:
+        try:
+            col = spotify_link.read_with_account(link, spotify)
+        except sp.SpotifyError as e:
+            why = str(e)
+    if col is None:
+        col = spotify_link.read(link)
+        col.fallback = why
     with _link_lock:
-        for uri in [u for u, (t, _) in _link_cache.items() if now - t >= LINK_CACHE_TTL]:
-            del _link_cache[uri]
-        _link_cache[link.uri] = (now, col)
+        for k in [k for k, (t, _) in _link_cache.items() if now - t >= LINK_CACHE_TTL]:
+            del _link_cache[k]
+        _link_cache[key] = (now, col)
     return col
+
+
+def link_notes(col):
+    """What the preview should warn about, as sentences."""
+    notes = []
+    if col.fallback:
+        notes.append(
+            "Your Spotify account could not read this, so Spotify's public page "
+            f"was used instead. {col.fallback}"
+        )
+    if col.truncated:
+        more = (
+            "" if spotify.connected
+            else " For all of them, connect your Spotify account below, or use a CSV from Exportify."
+        )
+        notes.append(
+            f"Spotify's public page lists the first {col.listed} of this playlist's "
+            f"{col.total} songs, so only those are downloaded.{more}"
+        )
+    return notes
 
 
 def link_target(col):
@@ -1234,6 +1270,8 @@ def api_link_preview():
         "tracks": len(col.rows),
         "total": col.total,
         "truncated": col.truncated,
+        "via": col.via,
+        "notes": link_notes(col),
         "folder": target["folder"],
         "sample": [
             {"artist": r.get("Artist Name(s)", ""), "title": r.get("Track Name", ""),

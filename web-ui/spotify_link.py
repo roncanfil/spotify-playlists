@@ -17,7 +17,9 @@ link, with no token and no API call:
 
 So a playlist link reads at most its first 100 tracks; the result says how
 many Spotify has, and the app tells the user to use the account connection or
-a CSV for the rest. Album names come from the rendered page and are left
+a CSV for the rest. When the user has connected their account, the app reads
+links through it instead (read_with_account), which has no such limits, and
+falls back to the public pages only when Spotify refuses the account. Album names come from the rendered page and are left
 empty for tracks it does not list. Checked against Spotify's pages in
 November 2026; when Spotify changes them, read() fails with a LinkError that
 says so rather than returning half a playlist.
@@ -87,6 +89,10 @@ class Collection:
     listed: int
     columns: list = field(default_factory=lambda: list(CSV_COLUMNS))
     image: str = ""
+    # "account" when read through the connected Spotify account, else "public".
+    via: str = "public"
+    # Why the account could not read it, when the public pages were used instead.
+    fallback: str = ""
 
     @property
     def truncated(self):
@@ -263,6 +269,26 @@ def _playable(rows):
 
 
 # ---------------------------------------------------------------- readers
+
+
+def read_with_account(link, client):
+    """
+    The Collection for a Link, read through the connected account (a
+    spotify.SpotifyClient). Raises spotify.SpotifyError when Spotify refuses,
+    for the caller to fall back to read().
+    """
+    entry = {"playlist": client.playlist_entry, "album": client.album_entry,
+             "track": client.track_entry}[link.kind](link.id)
+    rows = entry["rows"]
+    if link.kind == "track":
+        # Named "Artist - Title" in the artist's folder, as from the public page.
+        for r in rows:
+            r["Track Number"] = ""
+    if not _playable(rows):
+        raise LinkError(f"That {'song' if link.kind == 'track' else link.kind} has no tracks to download.")
+    return Collection(link.kind, link.id, entry["name"], entry["artist"], _playable(rows),
+                      len(rows), len(rows), image=entry["image"], via="account")
+
 
 
 def read(link, session=None):

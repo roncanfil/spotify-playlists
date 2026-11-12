@@ -642,8 +642,9 @@
   <section class="view on stack" id="view-spotify" role="tabpanel">
     <div class="panel measure" id="link-panel">
       <h2>Paste a Spotify link</h2>
-      <p class="lede">A playlist, an album or a song. No Spotify account needed: in Spotify, use
-        <b>Share</b> &rsaquo; <b>Copy link</b> and paste it here.</p>
+      <p class="lede">A playlist, an album or a song. In Spotify, use <b>Share</b> &rsaquo;
+        <b>Copy link</b> and paste it here. No account needed; with yours connected below, long
+        playlists come through in full, with album, year and genre on every song.</p>
       <form class="linkrow" id="link-form" novalidate>
         <label class="field"><span class="visually-hidden">Spotify link</span>
           <svg class="i"><use href="#i-link"/></svg>
@@ -1090,14 +1091,14 @@ function renderLink(d, loading) {
     : `<span class="art ph">${icon('note')}</span>`;
   const by = d.kind === 'playlist' ? (d.artist ? `by ${d.artist}` : '') : d.artist;
   const count = d.kind === 'track' ? '' : plural(d.tracks, 'song');
-  const sub = [KIND_WORD[d.kind], by, count].filter(Boolean).map(esc).join('<span class="sep">·</span>');
+  const via = d.via === 'account' ? 'via your account' : '';
+  const sub = [KIND_WORD[d.kind], by, count, via].filter(Boolean).map(esc).join('<span class="sep">·</span>');
   const more = d.tracks - d.sample.length;
   const sample = d.kind === 'track' ? '' : `<ol class="sample">${d.sample.map(t =>
     `<li><span class="t">${esc(t.title)}</span><span class="a">${esc(t.artist)}</span></li>`).join('')}${
     more > 0 ? `<li class="more">and ${plural(more, 'more song')}</li>` : ''}</ol>`;
-  const cut = d.truncated ? `<div class="callout warn">${icon('warn')}<div>Spotify’s public page lists
-    the first <b>${d.tracks}</b> of this playlist’s <b>${d.total}</b> songs, so only those are downloaded.
-    For all of them, connect your Spotify account below, or use a CSV from Exportify.</div></div>` : '';
+  const cut = (d.notes || []).map(n =>
+    `<div class="callout warn">${icon('warn')}<div>${esc(n)}</div></div>`).join('');
   const extra = d.kind === 'track' ? '' : ', with its CSV and an <code>.m3u</code>';
   card.innerHTML = `<div class="lc-head">${art}<div class="meta"><div class="nm">${esc(d.name)}</div>
     <div class="sub">${sub}</div></div></div>${sample}${cut}

@@ -396,3 +396,35 @@ def test_rerunning_a_saved_album_names_its_artist(client, monkeypatch):
 def test_only_listed_folders_can_be_rerun(client):
     r = client.post("/api/start", data={"playlist": "../etc", "bitrate": "192"})
     assert r.status_code == 400
+
+
+def test_a_connected_account_reads_links_and_a_refusal_falls_back(links, monkeypatch):
+    public = collection("playlist", name="All Out 80s", artist="Spotify", n=100, total=150)
+    links["col"] = public
+    monkeypatch.setattr(type(webapp.spotify), "connected", property(lambda self: True))
+
+    account = collection("playlist", name="All Out 80s", artist="Spotify", n=150)
+    account.via = "account"
+    monkeypatch.setattr(webapp.spotify_link, "read_with_account", lambda link, client: account)
+    col = webapp.read_link("https://open.spotify.com/playlist/abcdefghijklmnopqrstuv")
+    assert (col.via, len(col.rows), webapp.link_notes(col)) == ("account", 150, [])
+    assert links["reads"] == 0
+
+    def refuse(link, client):
+        raise webapp.sp.SpotifyError("Spotify refused this playlist (403).")
+
+    monkeypatch.setattr(webapp.spotify_link, "read_with_account", refuse)
+    webapp._link_cache.clear()
+    col = webapp.read_link("https://open.spotify.com/playlist/abcdefghijklmnopqrstuv")
+    assert (col.via, len(col.rows)) == ("public", 100)
+    notes = webapp.link_notes(col)
+    assert "could not read this" in notes[0] and "403" in notes[0]
+    # Already connected, so no advice to connect.
+    assert "first 100 of this playlist's 150" in notes[1] and "connect" not in notes[1]
+
+
+def test_logged_out_a_long_playlist_suggests_connecting(links):
+    links["col"] = collection("playlist", n=100, total=150)
+    col = webapp.read_link("https://open.spotify.com/playlist/abcdefghijklmnopqrstuv")
+    (note,) = webapp.link_notes(col)
+    assert "connect your Spotify account below" in note

@@ -63,6 +63,49 @@ CSV_COLUMNS = [
 LIKED_SONGS_ID = "__liked__"
 
 
+def track_row(track, album=None, item=None):
+    """
+    One CSV_COLUMNS row, plus "_artist_id" for the genre lookup, from a Web API
+    track. `album` defaults to the track's own album; an album's track list
+    has none, so it is passed in. `item` is the playlist entry, for who added
+    it and when.
+    """
+    album = album if album is not None else (track.get("album") or {})
+    artists = track.get("artists") or []
+    album_artists = album.get("artists") or []
+    item = item or {}
+    return {
+        "Track URI": track.get("uri", ""),
+        "Track Name": track.get("name", ""),
+        "Artist URI(s)": ", ".join(a.get("uri", "") for a in artists if a.get("uri")),
+        "Artist Name(s)": ", ".join(a.get("name", "") for a in artists if a.get("name")),
+        "Album URI": album.get("uri", ""),
+        "Album Name": album.get("name", ""),
+        "Album Artist URI(s)": ", ".join(a.get("uri", "") for a in album_artists if a.get("uri")),
+        "Album Artist Name(s)": ", ".join(a.get("name", "") for a in album_artists if a.get("name")),
+        "Album Release Date": album.get("release_date", ""),
+        "Album Image URL": (album.get("images") or [{}])[0].get("url", "")
+        if album.get("images")
+        else "",
+        "Disc Number": track.get("disc_number", ""),
+        "Track Number": track.get("track_number", ""),
+        "Track Duration (ms)": track.get("duration_ms", ""),
+        "Track Preview URL": track.get("preview_url") or "",
+        "Explicit": track.get("explicit", ""),
+        "Popularity": track.get("popularity", ""),
+        "ISRC": (track.get("external_ids") or {}).get("isrc", ""),
+        "Added By": (item.get("added_by") or {}).get("id") or "",
+        "Added At": item.get("added_at", ""),
+        "Genres": "",
+        "_artist_id": (artists[0].get("id") if artists else ""),
+    }
+
+
+def _first_image(obj):
+    """Spotify lists images largest first."""
+    return ((obj.get("images") or [{}])[0] or {}).get("url") or ""
+
+
 class SpotifyError(Exception):
     """Any failure talking to Spotify, with a message safe to show a user."""
 
@@ -385,60 +428,75 @@ class SpotifyClient:
                 continue
             if not track.get("name"):
                 continue
-            album = track.get("album") or {}
-            artists = track.get("artists") or []
-            album_artists = album.get("artists") or []
-            added_by = (item.get("added_by") or {}).get("id") or ""
-
-            for a in artists:
+            for a in track.get("artists") or []:
                 if a.get("id"):
                     artist_ids.append(a["id"])
+            rows.append(track_row(track, item=item))
 
-            rows.append(
-                {
-                    "Track URI": track.get("uri", ""),
-                    "Track Name": track.get("name", ""),
-                    "Artist URI(s)": ", ".join(
-                        a.get("uri", "") for a in artists if a.get("uri")
-                    ),
-                    "Artist Name(s)": ", ".join(
-                        a.get("name", "") for a in artists if a.get("name")
-                    ),
-                    "Album URI": album.get("uri", ""),
-                    "Album Name": album.get("name", ""),
-                    "Album Artist URI(s)": ", ".join(
-                        a.get("uri", "") for a in album_artists if a.get("uri")
-                    ),
-                    "Album Artist Name(s)": ", ".join(
-                        a.get("name", "") for a in album_artists if a.get("name")
-                    ),
-                    "Album Release Date": album.get("release_date", ""),
-                    "Album Image URL": (album.get("images") or [{}])[0].get("url", "")
-                    if album.get("images")
-                    else "",
-                    "Disc Number": track.get("disc_number", ""),
-                    "Track Number": track.get("track_number", ""),
-                    "Track Duration (ms)": track.get("duration_ms", ""),
-                    "Track Preview URL": track.get("preview_url") or "",
-                    "Explicit": track.get("explicit", ""),
-                    "Popularity": track.get("popularity", ""),
-                    "ISRC": (track.get("external_ids") or {}).get("isrc", ""),
-                    "Added By": added_by,
-                    "Added At": (item or {}).get("added_at", ""),
-                    "Genres": "",
-                    "_artist_id": (artists[0].get("id") if artists else ""),
-                }
-            )
+        return self._with_genres(rows, artist_ids, with_genres)
 
-        if with_genres and rows:
-            genre_map = self._artist_genres(artist_ids)
-            for row in rows:
-                row["Genres"] = ", ".join(genre_map.get(row.pop("_artist_id"), [])[:3])
-        else:
-            for row in rows:
-                row.pop("_artist_id", None)
-
+    def _with_genres(self, rows, artist_ids, with_genres=True):
+        """Fill "Genres" from each row's first artist, and drop the helper key."""
+        genre_map = self._artist_genres(artist_ids) if with_genres and rows else {}
+        for row in rows:
+            row["Genres"] = ", ".join(genre_map.get(row.pop("_artist_id", ""), [])[:3])
         return rows
+
+    # ---------- pasted links ----------
+    #
+    # A link pasted while connected is read here rather than from Spotify's
+    # public pages: no 100-song cap on playlists, and album, year and genre on
+    # every song. Each returns {"name", "artist", "image", "rows"}.
+
+    def playlist_entry(self, playlist_id):
+        """
+        A playlist as the account export reads it, so pasting a playlist and
+        picking it from the list give the same CSV, folder and file names.
+        """
+        data = self._get(
+            f"/playlists/{playlist_id}", {"fields": "name,owner(display_name),images"}
+        )
+        return {
+            "name": data.get("name") or playlist_id,
+            "artist": (data.get("owner") or {}).get("display_name") or "",
+            "image": _first_image(data),
+            "rows": self.playlist_rows(playlist_id),
+        }
+
+    def album_entry(self, album_id):
+        album = self._get(f"/albums/{album_id}")
+        # An album's track list has no album of its own; every row gets this.
+        info = {k: album.get(k) for k in ("uri", "name", "artists", "release_date", "images")}
+        tracks = album.get("tracks") or {}
+        items = list(tracks.get("items") or [])
+        if tracks.get("next"):
+            items += list(self._paged(tracks["next"]))
+        rows, artist_ids = [], []
+        for t in items:
+            if not t or not t.get("name"):
+                continue
+            for a in t.get("artists") or []:
+                if a.get("id"):
+                    artist_ids.append(a["id"])
+            rows.append(track_row(t, info))
+        artists = album.get("artists") or [{}]
+        return {
+            "name": album.get("name") or album_id,
+            "artist": artists[0].get("name") or "",
+            "image": _first_image(album),
+            "rows": self._with_genres(rows, artist_ids),
+        }
+
+    def track_entry(self, track_id):
+        t = self._get(f"/tracks/{track_id}")
+        artists = t.get("artists") or [{}]
+        rows = self._with_genres([track_row(t)], [a.get("id") for a in artists])
+        return {
+            "name": t.get("name") or track_id,
+            "artist": artists[0].get("name") or "",
+            "image": _first_image(t.get("album") or {}),
+            "rows": rows,
+        }
 
     def write_playlist_csv(self, playlist_id, path, with_genres=True):
         rows = self.playlist_rows(playlist_id, with_genres=with_genres)

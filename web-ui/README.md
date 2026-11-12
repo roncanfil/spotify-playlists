@@ -134,8 +134,16 @@ skipped because you already had them are included.
 
 ## Spotify links
 
-Pasting a link needs no account and no setup. `spotify_link.py` reads the two
-public pages any browser gets for that link, with no token and no API call:
+Pasting a link needs no account and no setup. With your account connected
+(see Spotify setup below), a link is read through it, with Spotify's own API:
+every song of a long playlist, and album, year and genre on each. A playlist
+pasted that way gives exactly the CSV, folder and file names that picking it
+from your list gives. If Spotify refuses the account, as it does a Development
+Mode app for playlists you did not create, the link is read from the public
+pages instead and the preview says why.
+
+Without an account, `spotify_link.py` reads the two public pages any browser
+gets for that link, with no token and no API call:
 
 - `open.spotify.com/<kind>/<id>`, which Spotify serves to a non-browser client
   as a rendered page. For an album or a song it carries everything: names,
@@ -144,9 +152,9 @@ public pages any browser gets for that link, with no token and no API call:
 - `open.spotify.com/embed/<kind>/<id>`, the embeddable player, which lists up
   to 100 songs of a playlist with their lengths but no album.
 
-So a link reads a playlist's first 100 songs, with album names for the first
-30. When a playlist is longer the preview says so; connect your account, or use
-a CSV, for the rest. Private playlists cannot be read from a link at all.
+So without an account a link reads a playlist's first 100 songs, with album
+names for the first 30, and no genre on anything. When a playlist is longer the
+preview says so; connect your account, or use a CSV, for the rest. Private playlists cannot be read from a link at all.
 Shortened `spotify.link` addresses are refused with a note to open them first.
 The link becomes a CSV in the same layout as the account export, so the rest
 of the app treats it like any other playlist. If Spotify changes those pages,

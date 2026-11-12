@@ -51,9 +51,10 @@ the Spotify redirect URI.
 ## What it does
 
 - Spotify tab: paste a link to a playlist, an album or a song and hit
-  Download. No Spotify account needed; a link reads up to the first 100 songs
-  of a playlist. Or connect your account once to browse your own playlists,
-  of any length, as a grid or a list.
+  Download. No Spotify account needed; without one a link reads up to the
+  first 100 songs of a playlist. Connect your account once and links are read
+  through it, complete and with genres, and your own playlists are listed
+  below as a grid or a list.
 - CSV tab: upload an Exportify CSV instead, if you would rather not connect
   Spotify.
 - Queue tab: one job at a time with live progress, filters for Saved, Skipped

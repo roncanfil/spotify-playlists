@@ -1,7 +1,7 @@
 """
-app.py: the saved source order, the sources block in /api/state, and the
-source tag on queue rows. No network: Soulseek is left unconfigured or its
-client is faked.
+app.py: onboarding, the Soulseek account and sharing endpoints, the source
+order, the sources block in /api/state, and the source tag on queue rows.
+No network: slskd's client is replaced by a fake that records its calls.
 """
 
 import json
@@ -19,13 +19,53 @@ os.environ.pop("APP_PASSWORD", None)
 import app as webapp  # noqa: E402
 
 
-@pytest.fixture(autouse=True)
-def fresh_state(monkeypatch):
-    try:
-        os.remove(webapp.SOURCE_ORDER_PATH)
-    except OSError:
+class FakeSlskd:
+    """Stands in for slskd.SlskdClient's account-level calls."""
+
+    name, label = "soulseek", "Soulseek"
+    state = ("logged out", "Disconnected")
+    login_ok = True
+    calls = []
+
+    def __init__(self, *a, **kw):
         pass
-    webapp._status_cache.update(at=0.0, items=None)
+
+    def status(self, timeout=None):
+        FakeSlskd.calls.append("status")
+        return FakeSlskd.state
+
+    def wait_for_options(self, ready, wait=15):
+        FakeSlskd.calls.append("wait_for_options")
+        return True
+
+    def connect(self, should_cancel=None, wait=None):
+        FakeSlskd.calls.append("connect")
+        if FakeSlskd.login_ok:
+            FakeSlskd.state = ("connected", "logged in as someone")
+        return FakeSlskd.login_ok
+
+    def disconnect(self):
+        FakeSlskd.calls.append("disconnect")
+        FakeSlskd.state = ("logged out", "Disconnected")
+
+    def rescan_shares(self):
+        FakeSlskd.calls.append("rescan")
+        return True
+
+
+@pytest.fixture(autouse=True)
+def fresh(monkeypatch):
+    for path in (webapp.SETTINGS_PATH, webapp.LEGACY_ORDER_PATH, webapp.slsk_settings.path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    webapp.slsk_settings.ensure()
+    webapp.invalidate_status()
+    FakeSlskd.state = ("logged out", "Disconnected")
+    FakeSlskd.login_ok = True
+    FakeSlskd.calls = []
+    monkeypatch.setattr(webapp.slskd, "SlskdClient", FakeSlskd)
     yield
 
 
@@ -34,82 +74,187 @@ def client():
     return webapp.app.test_client()
 
 
-def test_default_order_puts_soulseek_first():
-    assert webapp.load_source_order() == ["soulseek", "youtube"]
+def actions():
+    """What the app asked slskd to do, leaving out status checks."""
+    return [c for c in FakeSlskd.calls if c != "status"]
 
 
-def test_saved_order_is_cleaned_of_unknown_and_missing_names():
-    with open(webapp.SOURCE_ORDER_PATH, "w") as fh:
+def state(client):
+    return client.get("/api/state").get_json()
+
+
+def soulseek(client):
+    return next(i for i in state(client)["sources"]["items"] if i["name"] == "soulseek")
+
+
+# ---------------------------------------------------------------- settings files
+
+
+def test_slskd_settings_get_an_api_key_and_share_by_default():
+    s = webapp.slsk_settings.read()
+    assert len(s["api_key"]) >= 16
+    assert s["share"] is True
+    assert s["username"] == ""
+
+
+def test_default_order_and_not_yet_onboarded(client):
+    d = state(client)
+    assert d["sources"]["order"] == ["soulseek", "youtube"]
+    assert d["setup"] == {"onboarded": False}
+
+
+def test_order_saved_before_onboarding_existed_is_still_read():
+    with open(webapp.LEGACY_ORDER_PATH, "w") as fh:
+        json.dump({"order": ["youtube", "soulseek"]}, fh)
+    assert webapp.load_source_order() == ["youtube", "soulseek"]
+
+
+def test_broken_settings_fall_back_to_defaults():
+    with open(webapp.SETTINGS_PATH, "w") as fh:
+        fh.write("{not json")
+    assert webapp.load_settings() == {"order": ["soulseek", "youtube"], "onboarded": False}
+
+
+def test_unknown_names_in_the_order_are_dropped():
+    with open(webapp.SETTINGS_PATH, "w") as fh:
         json.dump({"order": ["youtube", "directconnect"]}, fh)
     assert webapp.load_source_order() == ["youtube", "soulseek"]
 
 
-def test_broken_order_file_falls_back_to_default():
-    with open(webapp.SOURCE_ORDER_PATH, "w") as fh:
-        fh.write("{not json")
-    assert webapp.load_source_order() == ["soulseek", "youtube"]
+# ---------------------------------------------------------------- status
 
 
-def test_state_reports_each_source(client):
-    d = client.get("/api/state").get_json()["sources"]
-    assert d["order"] == ["soulseek", "youtube"]
-    slsk, yt = d["items"]
-    assert (slsk["name"], slsk["state"]) == ("soulseek", "not configured")
-    assert (yt["name"], yt["state"]) == ("youtube", "connected")
-    assert yt["message"].startswith("yt-dlp ")
-    assert "MP3 output only" in slsk["note"]
+def test_soulseek_without_an_account_is_not_set_up(client):
+    item = soulseek(client)
+    assert (item["state"], item["message"]) == ("not set up", "No Soulseek account yet")
+    assert item["account"] == {"username": "", "share": True}
 
 
-def test_state_shows_a_soulseek_error(client, monkeypatch):
-    monkeypatch.setattr(
-        webapp.slskd.SlskdClient, "status",
-        lambda self, timeout=None: ("error", "could not reach slskd (ConnectionError)"),
-    )
-    item = client.get("/api/state").get_json()["sources"]["items"][0]
-    assert item == {
-        "name": "soulseek", "label": "Soulseek", "state": "error",
-        "message": "could not reach slskd (ConnectionError)",
-        "note": webapp.SOURCE_NOTES["soulseek"],
-    }
+def test_soulseek_commented_out_of_compose_is_not_installed(client):
+    FakeSlskd.state = ("not installed", "slskd is not running: its service is commented out of docker-compose.yml")
+    assert soulseek(client)["state"] == "not installed"
 
 
-def test_status_is_cached_between_polls(client, monkeypatch):
-    calls = []
+def test_a_refused_login_reads_as_an_error(client):
+    webapp.slsk_settings.update(username="someone", password="wrong")
+    FakeSlskd.state = ("logged out", "Disconnected")
+    item = soulseek(client)
+    assert item["state"] == "error"
+    assert item["message"].startswith("Soulseek refused the login for someone")
 
-    def status(self, timeout=None):
-        calls.append(1)
-        return "connected", "logged in as someone"
 
-    monkeypatch.setattr(webapp.slskd.SlskdClient, "status", status)
+def test_status_is_cached_between_polls(client):
     for _ in range(5):
         client.get("/api/state")
-    assert len(calls) == 1
+    assert FakeSlskd.calls.count("status") == 1
+
+
+# ---------------------------------------------------------------- account
+
+
+def test_logging_in_saves_the_account_connects_and_starts_sharing(client):
+    r = client.post("/api/soulseek/account", data={"username": "someone", "password": "pw", "share": "1"})
+    assert r.status_code == 200, r.get_json()
+    s = webapp.slsk_settings.read()
+    assert (s["username"], s["password"], s["share"]) == ("someone", "pw", True)
+    assert actions() == ["wait_for_options", "connect", "rescan"]
+    assert soulseek(client)["state"] == "connected"
+
+
+def test_a_refused_login_is_reported(client):
+    FakeSlskd.login_ok = False
+    r = client.post("/api/soulseek/account", data={"username": "taken", "password": "pw"})
+    assert r.status_code == 400
+    assert "Soulseek refused the login for taken" in r.get_json()["error"]
+
+
+def test_no_account_is_saved_when_slskd_is_not_installed(client):
+    FakeSlskd.state = ("not installed", "slskd is not running")
+    r = client.post("/api/soulseek/account", data={"username": "someone", "password": "pw"})
+    assert r.status_code == 409
+    assert webapp.slsk_settings.read()["username"] == ""
+
+
+@pytest.mark.parametrize("form, message", [
+    ({"username": "", "password": "pw"}, "Choose a Soulseek username."),
+    ({"username": "two words", "password": "pw"}, "no spaces"),
+    ({"username": "newname", "password": ""}, "Enter a password"),
+])
+def test_account_form_is_checked(client, form, message):
+    r = client.post("/api/soulseek/account", data=form)
+    assert r.status_code == 400 and message in r.get_json()["error"]
+
+
+def test_a_blank_password_keeps_the_saved_one_for_the_same_name(client):
+    webapp.slsk_settings.update(username="someone", password="secret")
+    r = client.post("/api/soulseek/account", data={"username": "someone", "password": "", "share": "0"})
+    assert r.status_code == 200
+    s = webapp.slsk_settings.read()
+    assert (s["password"], s["share"]) == ("secret", False)
+
+
+def test_removing_the_account_logs_out(client):
+    webapp.slsk_settings.update(username="someone", password="pw")
+    r = client.post("/api/soulseek/remove")
+    assert r.status_code == 200
+    assert webapp.slsk_settings.read()["username"] == ""
+    assert webapp.slsk_settings.read()["password"] == ""
+    assert "disconnect" in FakeSlskd.calls
+
+
+def test_turning_sharing_off_rescans(client):
+    r = client.post("/api/soulseek/share", data={"share": "0"})
+    assert r.status_code == 200
+    assert webapp.slsk_settings.read()["share"] is False
+    assert actions() == ["wait_for_options", "rescan"]
+
+
+# ---------------------------------------------------------------- onboarding and order
+
+
+def test_finishing_setup_with_youtube_first(client):
+    r = client.post("/api/setup/done", data={"first": "youtube"})
+    assert r.status_code == 200
+    d = state(client)
+    assert d["setup"] == {"onboarded": True}
+    assert d["sources"]["order"] == ["youtube", "soulseek"]
+
+
+def test_finishing_setup_needs_a_known_source(client):
+    assert client.post("/api/setup/done", data={"first": "napster"}).status_code == 400
 
 
 def test_setting_the_order(client):
     r = client.post("/api/sources/order", data={"order": "youtube,soulseek"})
     assert r.status_code == 200
-    assert r.get_json()["sources"]["order"] == ["youtube", "soulseek"]
     assert webapp.load_source_order() == ["youtube", "soulseek"]
 
 
 @pytest.mark.parametrize("bad", ["youtube", "youtube,youtube", "youtube,soulseek,other", ""])
 def test_an_order_must_name_every_source_once(client, bad):
-    r = client.post("/api/sources/order", data={"order": bad})
-    assert r.status_code == 400
+    assert client.post("/api/sources/order", data={"order": bad}).status_code == 400
     assert webapp.load_source_order() == ["soulseek", "youtube"]
 
 
-def test_ordered_sources_follow_the_setting(monkeypatch):
-    monkeypatch.setenv("SLSKD_URL", "http://slskd:5030")
+def test_jobs_use_soulseek_only_once_an_account_exists():
+    assert [s.name for s in webapp.ordered_sources()] == ["youtube"]
+    webapp.slsk_settings.update(username="someone", password="pw")
     assert [s.name for s in webapp.ordered_sources()] == ["soulseek", "youtube"]
     webapp.save_source_order(["youtube", "soulseek"])
     assert [s.name for s in webapp.ordered_sources()] == ["youtube", "soulseek"]
 
 
-def test_ordered_sources_without_soulseek_is_youtube_alone():
-    webapp.save_source_order(["soulseek", "youtube"])
-    assert [s.name for s in webapp.ordered_sources()] == ["youtube"]
+def test_a_finished_job_with_downloads_rescans_the_share():
+    webapp.slsk_settings.update(username="someone", password="pw")
+    webapp.rescan_share()
+    assert FakeSlskd.calls == ["rescan"]
+    FakeSlskd.calls = []
+    webapp.slsk_settings.update(share=False)
+    webapp.rescan_share()
+    assert FakeSlskd.calls == []
+
+
+# ---------------------------------------------------------------- queue rows
 
 
 def test_queue_rows_carry_their_source_and_jobs_count_by_source():
@@ -131,13 +276,3 @@ def test_queue_rows_carry_their_source_and_jobs_count_by_source():
         ("YouTube", "opus 127 kbps (audio-only, format 251) - Soulseek missed: no file matched"),
     ]
     assert j.snapshot()["by_source"] == {"Soulseek": 1, "YouTube": 1}
-
-
-def test_a_youtube_only_row_reads_exactly_as_before():
-    j = webapp.Job("/x/mix.csv", 192)
-    j._handle({
-        "type": "track_done", "query": "Enya - Orinoco Flow", "source": "youtube",
-        "source_name": "YouTube", "source_label": "opus 127 kbps (audio-only, format 251)",
-        "used_query": "Enya - Orinoco Flow", "attempts": [],
-    })
-    assert j.events[-1]["detail"] == "opus 127 kbps (audio-only, format 251)"

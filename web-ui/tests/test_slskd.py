@@ -392,19 +392,20 @@ def test_status_connected(tmp_path):
 
 def test_status_not_logged_in(tmp_path):
     client, _, _ = make(app_routes(logged_in=False), tmp_path)
-    state, msg = client.status()
-    assert state == "error" and "not logged in to Soulseek (server state: Disconnected)" in msg
+    assert client.status() == ("logged out", "Disconnected")
 
 
 def test_status_bad_key(tmp_path):
     client, _, _ = make(app_routes(status=401), tmp_path)
-    assert client.status() == ("error", "slskd refused the API key (check SLSKD_API_KEY on both containers)")
+    assert client.status() == (
+        "error", "slskd refused the app's key; restart slskd so it rereads its settings"
+    )
 
 
 def test_status_missing_shared_folder(tmp_path):
     client, _, _ = make(app_routes(), tmp_path / "nope")
     state, msg = client.status()
-    assert state == "error" and "not mounted here" in msg
+    assert state == "error" and "is not visible here" in msg
 
 
 def test_status_unreachable(tmp_path):
@@ -415,7 +416,79 @@ def test_status_unreachable(tmp_path):
             raise requests.ConnectionError("refused")
 
     client = SlskdClient("http://slskd:5030", "k" * 32, str(tmp_path), session=Down({}))
-    assert client.status() == ("error", "could not reach slskd (ConnectionError)")
+    assert client.status() == ("error", "slskd is not answering (it may still be starting)")
+
+
+def test_status_when_the_service_is_commented_out(tmp_path):
+    import socket
+
+    import requests
+
+    class NoHost(FakeSession):
+        def request(self, *a, **kw):
+            try:
+                raise socket.gaierror(-2, "Name or service not known")
+            except socket.gaierror as e:
+                raise requests.ConnectionError("Max retries exceeded") from e
+
+    client = SlskdClient("http://slskd:5030", "k" * 32, str(tmp_path), session=NoHost({}))
+    state, msg = client.status()
+    assert state == "not installed" and "commented out" in msg
+
+
+def server_routes(states):
+    """GET /server serves `states` in turn, the last repeating."""
+    seq = {"i": 0}
+
+    def get_server(p, kw):
+        st = states[min(seq["i"], len(states) - 1)]
+        seq["i"] += 1
+        return Resp(200, st)
+
+    return {
+        ("DELETE", "/server"): lambda p, kw: Resp(204, text=""),
+        ("PUT", "/server"): lambda p, kw: Resp(200, text=""),
+        ("GET", "/server"): get_server,
+    }
+
+
+def test_connect_waits_for_the_login(tmp_path):
+    client, session, _ = make(server_routes([
+        {"state": "Connecting", "isConnecting": True},
+        {"state": "Connected, LoggingIn", "isLoggingIn": True},
+        {"state": "Connected, LoggedIn", "isLoggedIn": True},
+    ]), tmp_path)
+    assert client.connect() is True
+    assert [c[0] for c in session.calls[:2]] == ["DELETE", "PUT"]
+
+
+def test_connect_reports_a_refused_login(tmp_path):
+    # slskd answers the connect call with 200 even for a wrong password; the
+    # refusal only shows as the state settling on a plain Disconnected.
+    client, _, clock = make(server_routes([
+        {"state": "Connecting", "isConnecting": True},
+        {"state": "Disconnected"},
+    ]), tmp_path)
+    start = clock.t
+    assert client.connect() is False
+    assert clock.t - start < 5
+
+
+def test_wait_for_options_polls_until_slskd_has_the_setting(tmp_path):
+    seq = {"i": 0}
+
+    def get_options(p, kw):
+        seq["i"] += 1
+        return Resp(200, {"soulseek": {"username": "someone" if seq["i"] >= 3 else None}})
+
+    client, _, _ = make({("GET", "/options"): get_options}, tmp_path)
+    assert client.wait_for_options(lambda o: o["soulseek"]["username"] == "someone")
+    assert seq["i"] == 3
+
+
+def test_wait_for_options_gives_up(tmp_path):
+    client, _, _ = make({("GET", "/options"): lambda p, kw: Resp(200, {})}, tmp_path)
+    assert client.wait_for_options(lambda o: False, wait=3) is False
 
 
 def test_status_not_configured():

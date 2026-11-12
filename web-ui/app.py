@@ -28,7 +28,9 @@ from flask import (
 # It also still runs standalone as a deprecated CLI; see ../cli/README.md.
 import download as core
 import slskd
+import slskd_config
 import spotify as sp
+from sources import P2PSource
 
 app = Flask(__name__)
 
@@ -313,6 +315,8 @@ class Job:
                 sources=ordered_sources(),
             ):
                 self._handle(ev)
+            if self.downloaded:
+                rescan_share()
         except Exception as e:  # bad CSV, unreadable columns, disk errors
             with self._lock:
                 self.state = "error"
@@ -486,49 +490,121 @@ queue = JobQueue()
 
 # ---------------------------------------------------------------- sources
 
-SOURCE_ORDER_PATH = os.path.join(STATE_DIR, "sources.json")
-# Every source the app knows, in the default order: the P2P network for real
-# 320 kbps and lossless files first, YouTube as the fallback.
+SETTINGS_PATH = os.path.join(STATE_DIR, "settings.json")
+# Where the source order was kept before onboarding existed; read if present.
+LEGACY_ORDER_PATH = os.path.join(STATE_DIR, "sources.json")
+# Every source the app knows, in the default order.
 KNOWN_SOURCES = {"soulseek": "Soulseek", "youtube": "YouTube"}
 SOURCE_NOTES = {
-    "soulseek": "MP3 output only. M4A always comes from YouTube.",
-    "youtube": "Always available. Audio tops out near 130 kbps.",
+    "soulseek": "Real 320 kbps and lossless files from people's collections. "
+    "MP3 output only; M4A always comes from YouTube.",
+    "youtube": "Nothing to set up. Audio tops out around 130 kbps.",
 }
 STATUS_TTL = 15
 _status_cache = {"at": 0.0, "items": None}
 _status_lock = threading.Lock()
+_settings_lock = threading.Lock()
+
+# slskd is reached by its compose service name; override for other setups.
+SLSKD_URL = os.environ.get("SLSKD_URL", "").strip() or "http://slskd:5030"
+# slskd keeps its settings, database and downloads here, in the same place
+# inside both containers. See slskd_config.
+slsk_settings = slskd_config.Settings(os.path.join(STATE_DIR, "slskd"), MUSIC_DIR)
+try:
+    # Writes the API key slskd and this app share. slskd picks up the file
+    # whenever it changes, so the order the two containers start in does not
+    # matter.
+    slsk_settings.ensure()
+except OSError as _e:
+    STARTUP_WARNINGS.append(f"Could not write slskd's settings: {_e}")
+    print(f"[warn] {STARTUP_WARNINGS[-1]}", file=sys.stderr)
+
+
+def load_settings():
+    """{"order": [...], "onboarded": bool}, cleaned; defaults when missing or broken."""
+    data = {}
+    for path in (SETTINGS_PATH, LEGACY_ORDER_PATH):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict):
+                break
+        except (OSError, ValueError):
+            data = {}
+    if not isinstance(data, dict):
+        data = {}
+    saved = data.get("order") or []
+    order = [n for n in saved if n in KNOWN_SOURCES]
+    order += [n for n in KNOWN_SOURCES if n not in order]
+    return {"order": order, "onboarded": bool(data.get("onboarded"))}
+
+
+def save_settings(**changes):
+    with _settings_lock:
+        cur = load_settings()
+        cur.update(changes)
+        os.makedirs(STATE_DIR, exist_ok=True)
+        tmp = SETTINGS_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(cur, fh)
+        os.replace(tmp, SETTINGS_PATH)
+    return cur
 
 
 def load_source_order():
-    """
-    The saved order, cleaned: unknown names dropped, missing ones appended in
-    default order. A missing or broken file gives the default.
-    """
-    try:
-        with open(SOURCE_ORDER_PATH, encoding="utf-8") as fh:
-            saved = json.load(fh).get("order") or []
-    except (OSError, ValueError, AttributeError):
-        saved = []
-    order = [n for n in saved if n in KNOWN_SOURCES]
-    order += [n for n in KNOWN_SOURCES if n not in order]
-    return order
+    return load_settings()["order"]
 
 
 def save_source_order(order):
-    os.makedirs(STATE_DIR, exist_ok=True)
-    tmp = SOURCE_ORDER_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump({"order": order}, fh)
-    os.replace(tmp, SOURCE_ORDER_PATH)
+    save_settings(order=order)
+
+
+def soulseek_client():
+    return slskd.SlskdClient(
+        SLSKD_URL, slsk_settings.read()["api_key"], slsk_settings.downloads_dir,
+    )
 
 
 def ordered_sources():
-    """The configured sources, in the order set in Settings."""
+    """
+    The sources a job uses, in the order set in Settings. Soulseek only once
+    an account is set up: an slskd with no account would only add a warning
+    to every job.
+    """
+    found = [core.YouTubeSource()]
+    if slsk_settings.read()["username"]:
+        found.append(P2PSource(soulseek_client()))
     order = load_source_order()
-    return sorted(
-        core.default_sources(),
-        key=lambda s: order.index(s.name) if s.name in order else len(order),
-    )
+    return sorted(found, key=lambda s: order.index(s.name) if s.name in order else len(order))
+
+
+def soulseek_status():
+    """
+    (state, message) for the UI: "connected", "connecting", "not set up",
+    "not installed" or "error".
+    """
+    acct = slsk_settings.read()
+    user = acct["username"]
+    state, message = soulseek_client().status(timeout=3)
+    if state == "not installed":
+        return state, message
+    if state in ("error", "not configured"):
+        return "error", message
+    if not user:
+        return "not set up", "No Soulseek account yet"
+    if state == "logged out":
+        if message == "Disconnected":
+            return "error", (
+                f"Soulseek refused the login for {user}: wrong password, or "
+                "someone else has that name"
+            )
+        return "connecting", f"Connecting as {user}"
+    return "connected", message
+
+
+def invalidate_status():
+    with _status_lock:
+        _status_cache.update(at=0.0, items=None)
 
 
 def source_status():
@@ -540,7 +616,7 @@ def source_status():
     with _status_lock:
         if _status_cache["items"] and time.time() - _status_cache["at"] < STATUS_TTL:
             return _status_cache["items"]
-    state, message = slskd.SlskdClient.from_env().status(timeout=3)
+    state, message = soulseek_status()
     items = {
         "soulseek": {"state": state, "message": message},
         "youtube": {"state": "connected", "message": f"yt-dlp {ytdlp_version()}"},
@@ -552,18 +628,23 @@ def source_status():
 
 def sources_block():
     status = source_status()
-    return {
-        "order": load_source_order(),
-        "items": [
-            {
-                "name": name,
-                "label": KNOWN_SOURCES[name],
-                "note": SOURCE_NOTES[name],
-                **status[name],
-            }
-            for name in load_source_order()
-        ],
-    }
+    acct = slsk_settings.read()
+    order = load_source_order()
+    items = []
+    for name in order:
+        item = {"name": name, "label": KNOWN_SOURCES[name], "note": SOURCE_NOTES[name],
+                **status[name]}
+        if name == "soulseek":
+            item["account"] = {"username": acct["username"], "share": acct["share"]}
+        items.append(item)
+    return {"order": order, "items": items}
+
+
+def rescan_share():
+    """After new downloads, so they are offered on Soulseek too. Best effort."""
+    acct = slsk_settings.read()
+    if acct["username"] and acct["share"]:
+        soulseek_client().rescan_shares()
 
 
 def ytdlp_version():
@@ -669,6 +750,7 @@ def api_state():
                 "redirect_uri": SPOTIFY_REDIRECT_URI,
             },
             "sources": sources_block(),
+            "setup": {"onboarded": load_settings()["onboarded"]},
         }
     )
     return jsonify(snap)
@@ -684,6 +766,103 @@ def api_sources_order():
         save_source_order(order)
     except OSError as e:
         return jsonify({"error": f"Could not save the order: {e}"}), 500
+    return jsonify({"ok": True, "sources": sources_block()})
+
+
+# ---------------------------------------------------------------- soulseek setup
+
+
+@app.post("/api/soulseek/account")
+@require_auth
+def api_soulseek_account():
+    """
+    Save a Soulseek account and log in with it. The first login creates the
+    account, so there is nothing to sign up for. A blank password keeps the
+    saved one when the username is unchanged, so sharing can be toggled
+    without retyping it.
+    """
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    share = request.form.get("share")
+    if not username:
+        return jsonify({"error": "Choose a Soulseek username."}), 400
+    if any(c.isspace() for c in username) or len(username) > 30:
+        return jsonify({"error": "Soulseek usernames have no spaces and at most 30 characters."}), 400
+    current = slsk_settings.read()
+    if not password and username != current["username"]:
+        return jsonify({"error": "Enter a password for this account."}), 400
+    client = soulseek_client()
+    state, message = client.status(timeout=5)
+    if state == "not installed":
+        return jsonify({"error": message}), 409
+    if state == "error":
+        return jsonify({"error": message}), 502
+    try:
+        slsk_settings.update(
+            username=username,
+            password=password or None,
+            share=None if share is None else share in ("1", "true", "on"),
+        )
+    except OSError as e:
+        return jsonify({"error": f"Could not save slskd's settings: {e}"}), 500
+    if not client.wait_for_options(
+        lambda o: (o.get("soulseek") or {}).get("username") == username
+    ):
+        return jsonify({"error": "slskd did not pick up the new account; try again."}), 502
+    ok = client.connect(wait=20)
+    invalidate_status()
+    if not ok:
+        return jsonify({"error": (
+            f"Soulseek refused the login for {username}. Either the password is "
+            "wrong or someone else already has that name; try another."
+        )}), 400
+    rescan_share()
+    return jsonify({"ok": True, "message": f"Logged in as {username}", "sources": sources_block()})
+
+
+@app.post("/api/soulseek/remove")
+@require_auth
+def api_soulseek_remove():
+    try:
+        slsk_settings.update(username="")
+    except OSError as e:
+        return jsonify({"error": f"Could not save slskd's settings: {e}"}), 500
+    soulseek_client().disconnect()
+    invalidate_status()
+    return jsonify({"ok": True, "sources": sources_block()})
+
+
+@app.post("/api/soulseek/share")
+@require_auth
+def api_soulseek_share():
+    on = request.form.get("share") in ("1", "true", "on")
+    try:
+        slsk_settings.update(share=on)
+    except OSError as e:
+        return jsonify({"error": f"Could not save slskd's settings: {e}"}), 500
+    # A rescan applies the change either way: it adds the library, or empties
+    # the share now that no folder is listed. Only once slskd has the setting.
+    client = soulseek_client()
+    client.wait_for_options(
+        lambda o: (MUSIC_DIR in ((o.get("shares") or {}).get("directories") or [])) == on
+    )
+    client.rescan_shares()
+    invalidate_status()
+    return jsonify({"ok": True, "sources": sources_block()})
+
+
+@app.post("/api/setup/done")
+@require_auth
+def api_setup_done():
+    """Finish onboarding: the chosen source goes first, the other is the fallback."""
+    first = request.form.get("first", "")
+    if first not in KNOWN_SOURCES:
+        return jsonify({"error": "Choose Soulseek or YouTube."}), 400
+    order = [first] + [n for n in KNOWN_SOURCES if n != first]
+    try:
+        save_settings(order=order, onboarded=True)
+    except OSError as e:
+        return jsonify({"error": f"Could not save the settings: {e}"}), 500
     return jsonify({"ok": True, "sources": sources_block()})
 
 

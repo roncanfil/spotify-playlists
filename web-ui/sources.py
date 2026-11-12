@@ -148,14 +148,50 @@ def probe_audio(path):
     )
 
 
+# The bitrates an MP3 can be encoded at.
+MP3_STEPS = (32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+
+
+# MP3 needs roughly a fifth more bits than Opus or AAC to hold the same sound.
+MP3_HEADROOM = 1.2
+
+
+def honest_bitrate(source_kbps, target):
+    """
+    The MP3 bitrate for a lossy, non-MP3 source (YouTube's Opus or AAC, or
+    an AAC or Vorbis file from a peer): the smallest MP3 step that holds the
+    source, never above `target`. The user's setting is a ceiling, not a
+    promise: YouTube's ~125-135 kbps Opus becomes a 160 kbps MP3 at a 192 or
+    320 setting, rather than a 320 that only looks better.
+
+    "Holds" means the source's bitrate plus MP3_HEADROOM, because matching
+    the figure is not matching the sound: a 126 kbps Opus stream squeezed into
+    a 128 kbps MP3 audibly loses detail (seen in a live run, which is why the
+    headroom exists). Unknown source: the target.
+    """
+    if not source_kbps or source_kbps <= 0:
+        return target
+    need = source_kbps * MP3_HEADROOM
+    step = next((s for s in MP3_STEPS if s >= need), MP3_STEPS[-1])
+    return min(step, target)
+
+
+def encode_bitrate(info, target):
+    """The bitrate to encode `info` at, when plan_conversion said "encode"."""
+    if info.kind == "lossy":
+        return honest_bitrate(info.kbps, target)
+    # Lossless, or an MP3 above the target: down to the target.
+    return target
+
+
 def plan_conversion(kind, kbps, target):
     """
     "copy" or "encode" for a file of `kind` at `kbps`, making an MP3 of
     `target` kbps. Never upscale: an MP3 at or below the target is kept as it
     is, since re-encoding it higher adds size and no sound. Lossless, and MP3
     above the target, are encoded down to it. Other lossy formats cannot be
-    copied into an MP3, so they are encoded at the target, as YouTube's opus
-    already is. Raises Rejected for a lossy file too poor to be worth having.
+    copied into an MP3, so they are encoded, at encode_bitrate(). Raises
+    Rejected for a lossy file too poor to be worth having.
     """
     if kind == "lossless":
         return "encode"
@@ -176,9 +212,9 @@ def check_length(info, duration):
         )
 
 
-def convert(src, dest, mode, target, info):
+def convert(src, dest, mode, bitrate, info):
     """
-    Write `src` to `dest` as MP3, copying or encoding per `mode`.
+    Write `src` to `dest` as MP3, copying or encoding per `mode` (at `bitrate`).
 
     Only the first audio stream is kept and every tag and picture is dropped,
     so the file ends up tagged from the playlist alone, as YouTube downloads
@@ -195,7 +231,7 @@ def convert(src, dest, mode, target, info):
     if mode == "copy":
         cmd += ["-c:a", "copy"]
     else:
-        cmd += ["-c:a", "libmp3lame", "-b:a", f"{target}k"]
+        cmd += ["-c:a", "libmp3lame", "-b:a", f"{bitrate}k"]
         # LAME stops at 48 kHz and two channels; hi-res and surround files
         # would otherwise fail to encode.
         if info.sample_rate > 48000:
@@ -220,7 +256,7 @@ def convert(src, dest, mode, target, info):
                 pass
 
 
-def describe_file(info, mode, target):
+def describe_file(info, mode, bitrate):
     """The queue's line for what was downloaded and what was done to it."""
     if info.kind == "lossless":
         bits = f"{info.bits}-bit " if info.bits else ""
@@ -230,7 +266,7 @@ def describe_file(info, mode, target):
         what = f"{info.codec} {info.kbps} kbps"
     if mode == "copy":
         return f"{what}, kept as is"
-    return f"{what}, encoded to {target} kbps"
+    return f"{what}, encoded to {bitrate} kbps"
 
 
 # ------------------------------------------------------------ P2P
@@ -366,7 +402,8 @@ class P2PSource:
                     raise Rejected("it is not an audio file that can be read")
                 check_length(info, req.track.duration)
                 mode = plan_conversion(info.kind, info.kbps, req.bitrate)
-                convert(local, req.target_path, mode, req.bitrate, info)
+                rate = encode_bitrate(info, req.bitrate) if mode == "encode" else info.kbps
+                convert(local, req.target_path, mode, rate, info)
             except Rejected as e:
                 reasons.append(f"{who}: {e}")
                 ranker.mark_failed(cand.id)
@@ -376,7 +413,7 @@ class P2PSource:
             self.known.add(cand.user)
             return {
                 "path": req.target_path,
-                "source_label": describe_file(info, mode, req.bitrate),
+                "source_label": describe_file(info, mode, rate),
                 "comment": f"Source: {self.label}, {who}",
                 "peer": who,
                 "remote_file": match.stem(cand.file.filename),

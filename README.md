@@ -1,8 +1,9 @@
 # Spotify playlists to MP3
 
 Takes a Spotify playlist and produces a folder of tagged MP3s. The audio comes
-from YouTube, or, if you add the optional Soulseek sidecar, from Soulseek first
-for real 320 kbps and lossless sources, with YouTube as the fallback.
+from Soulseek, for real 320 kbps and lossless sources, and from YouTube, which
+needs no account. A setup screen on first visit asks which to try first; the
+other fills in whatever the first cannot find.
 
 ## Layout
 
@@ -56,12 +57,12 @@ the Spotify redirect URI.
   and Failed, a separate list of failures with their errors, and a per-track
   history for finished playlists that sorts failures first. Each saved track
   shows which source it came from.
-- Settings tab: MP3 at 128, 192 or 320 kbps, or M4A stream copy; the audio
-  sources with their status and the order they are tried in; and the yt-dlp
-  updater.
-- Optional Soulseek source: see
-  [`deploy/README.md`](deploy/README.md#soulseek-optional) for the account,
-  port forwarding and sharing.
+- Settings tab: MP3 up to 128, 192 or 320 kbps (a maximum: nothing is padded
+  above its source's quality), or M4A stream copy; the audio sources with their
+  status and order; the Soulseek account and sharing; and the yt-dlp updater.
+- Soulseek: set up from the app, nothing to edit in the compose file. See
+  [`deploy/README.md`](deploy/README.md#soulseek) for port forwarding and what
+  sharing means.
 - Optional password: set `APP_PASSWORD` and the app shows a login page.
 
 ### What you get on disk

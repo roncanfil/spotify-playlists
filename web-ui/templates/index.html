@@ -503,6 +503,39 @@
   .srcs .sub { display:block; line-height:1.45; }
   .srcs .sub .msg-err { color:var(--fail); }
   .tl .src { height:18px; padding:0 7px; font-size:11px; margin-left:6px; vertical-align:1px; }
+  .acct { margin-top:14px; padding-top:14px; border-top:1px solid var(--line); }
+  .acct .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:14px; }
+  .acct .line b { font-weight:620; }
+
+  /* ------------------------------------------------------------ onboarding */
+  dialog.onboard {
+    border:0; padding:0; border-radius:var(--r-lg); background:var(--surface); color:var(--ink);
+    box-shadow:var(--shadow-pop); width:min(560px, calc(100vw - 32px)); max-height:calc(100dvh - 32px);
+    margin:auto; overflow:auto;
+  }
+  /* The dialog itself takes focus when it opens; its controls show their own rings. */
+  dialog.onboard:focus, dialog.onboard:focus-visible { outline:none; }
+  dialog.onboard::backdrop { background:rgba(0,0,0,.5); -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px); }
+  .ob { padding:26px 26px 22px; }
+  @media (max-width: 480px) { .ob { padding:22px 18px 18px; } }
+  .ob .stepno { margin:0 0 6px; font-size:12px; font-weight:620; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); }
+  .ob h2 { margin:0 0 6px; font-size:19px; font-weight:650; letter-spacing:-.015em; }
+  .ob .opt .txt b { display:flex; align-items:center; gap:8px; }
+  .ob .opt .txt .why { color:var(--fail); }
+  .ob .callout { margin-top:14px; }
+  .ob .err { margin:12px 0 0; color:var(--fail); font-size:13.5px; }
+  .ob .acts { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:20px; }
+  .opt.disabled { opacity:.55; pointer-events:none; }
+  .in { display:block; margin-top:12px; }
+  .in span { display:block; margin-bottom:6px; font-size:12.5px; font-weight:620; color:var(--muted); }
+  .in input {
+    width:100%; height:40px; padding:0 12px; border-radius:var(--r-sm); border:1px solid var(--line-2);
+    background:var(--surface); color:var(--ink); font:inherit; font-size:14.5px; transition:border-color .12s, box-shadow .12s;
+  }
+  .in input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
+  .check { display:flex; gap:10px; align-items:flex-start; margin-top:14px; font-size:14px; cursor:pointer; }
+  .check input { width:16px; height:16px; margin-top:2px; accent-color:var(--accent); flex:none; }
+  .check small { display:block; margin-top:2px; color:var(--muted); font-size:12.5px; line-height:1.45; }
   .kv dt { color:var(--muted); margin:0; } .kv dd { margin:0; font-weight:580; font-variant-numeric:tabular-nums; }
 
   /* ------------------------------------------------------------ dialog */
@@ -705,7 +738,7 @@
       </div>
 
       <div class="group" id="br-group">
-        <p class="label">MP3 bitrate</p>
+        <p class="label">Maximum MP3 bitrate</p>
         <div class="opts three" id="bitrates" role="radiogroup" aria-label="MP3 bitrate">
           <label class="opt" data-br="128"><input type="radio" name="br" value="128"><span class="radio"></span><span class="txt"><b>128k</b><span>Smallest</span></span></label>
           <label class="opt on" data-br="192"><input type="radio" name="br" value="192" checked><span class="radio"></span><span class="txt"><b>192k</b><span>Default</span></span></label>
@@ -720,8 +753,7 @@
       <p class="lede">Each track is tried from the top down, and the first source that finds it
         wins. Applies to the whole server, from the next playlist that starts.</p>
       <div class="rows srcs" id="srcs"><div class="empty left">Loading…</div></div>
-      <p class="fine" style="margin-top:10px">Setting up Soulseek, and what sharing means for it:
-        see <b>deploy/README.md</b>.</p>
+      <div class="acct" id="slsk-acct"></div>
     </div>
 
     <div class="panel measure">
@@ -736,6 +768,8 @@
     </div>
   </section>
 </main>
+
+<dialog class="onboard" id="onboard" aria-labelledby="ob-title"><div class="ob" id="ob"></div></dialog>
 
 <dialog class="confirm" id="dlg">
   <form method="dialog">
@@ -1306,7 +1340,9 @@ function paintDetail(id) {
 /* ------------------------------------------------------------ audio sources */
 const SRC_STATE = {
   connected: ['ok', 'Connected'],
-  'not configured': ['skip', 'Not configured'],
+  connecting: ['warn', 'Connecting'],
+  'not set up': ['skip', 'Not set up'],
+  'not installed': ['skip', 'Not installed'],
   error: ['fail', 'Error'],
 };
 let srcSig = null, srcOrder = [];
@@ -1320,9 +1356,7 @@ function renderSources(block) {
   const items = block.items || [];
   $('srcs').innerHTML = items.map((it, i) => {
     const [cls, word] = SRC_STATE[it.state] || SRC_STATE.error;
-    const msg = it.state === 'not configured'
-      ? 'Not set up. Add the slskd sidecar to use it.'
-      : esc(it.message || '');
+    const msg = esc(it.message || '');
     return `<div class="row">
       <span class="pos">${i + 1}</span>
       <div class="nm">${esc(it.label)}<span class="pill ${cls}">${word}</span></div>
@@ -1335,6 +1369,174 @@ function renderSources(block) {
       <div class="sub"><span class="${it.state === 'error' ? 'msg-err' : ''}">${msg}</span><br>${esc(it.note || '')}</div>
     </div>`;
   }).join('');
+  renderAccount(items.find(i => i.name === 'soulseek') || {});
+}
+
+const SHARE_NOTE = 'Other Soulseek users can download what is in your library, and many only send '
+  + 'files to people who share. Sharing distributes those files, so only share what you are entitled to.';
+
+function renderAccount(s) {
+  const a = s.account || {};
+  let html;
+  if (s.state === 'not installed') {
+    html = `<p class="fine">${esc(s.message)}. Uncomment the slskd service to use Soulseek.</p>`;
+  } else if (!a.username) {
+    html = `<div class="line"><span>No Soulseek account yet.</span><span class="spacer"></span>
+      <button class="btn sm" type="button" data-acct="setup">Set up Soulseek</button></div>`;
+  } else {
+    html = `<div class="line"><span>Soulseek account <b>${esc(a.username)}</b></span><span class="spacer"></span>
+        <button class="btn ghost sm" type="button" data-acct="edit">Change</button>
+        <button class="btn ghost sm danger" type="button" data-acct="remove">Remove</button></div>
+      <label class="check"><input type="checkbox" id="slsk-share" ${a.share ? 'checked' : ''}>
+        <span>Share my music folder<small>${SHARE_NOTE}</small></span></label>`;
+  }
+  html += `<div class="line" style="margin-top:14px">
+    <button class="btn ghost sm" type="button" data-acct="rerun">Run setup again</button></div>`;
+  $('slsk-acct').innerHTML = html;
+}
+
+$('slsk-acct').addEventListener('click', async e => {
+  const b = e.target.closest('[data-acct]');
+  if (!b) return;
+  const what = b.dataset.acct;
+  if (what === 'setup' || what === 'edit') return openOnboard('account', 'settings');
+  if (what === 'rerun') return openOnboard('choose', 'rerun');
+  if (what === 'remove') {
+    const ok = await confirmAction({
+      title: 'Remove the Soulseek account?',
+      body: 'slskd logs out and stops sharing. Tracks then come from YouTube only, until you set up an account again.',
+      action: 'Remove',
+    });
+    if (!ok) return;
+    try { const r = await api('/api/soulseek/remove'); srcSig = null; renderSources(r.sources); flash('Soulseek account removed.', true); }
+    catch (err) { flash(err.message, false); }
+  }
+});
+$('slsk-acct').addEventListener('change', async e => {
+  if (e.target.id !== 'slsk-share') return;
+  const on = e.target.checked;
+  e.target.disabled = true;
+  try {
+    const r = await api('/api/soulseek/share', { share: on ? '1' : '0' });
+    srcSig = null; renderSources(r.sources);
+    flash(on ? 'Sharing your music folder on Soulseek.' : 'No longer sharing on Soulseek.', true);
+  } catch (err) { e.target.checked = !on; flash(err.message, false); }
+  e.target.disabled = false;
+});
+
+/* ------------------------------------------------------------ onboarding
+   Shown once, until the user picks where music comes from first. "setup"
+   cannot be dismissed; "settings" (change the account) and "rerun" can. */
+let obMode = 'setup', obFirst = 'soulseek', obShown = false;
+const slskItem = () => (((lastData || {}).sources || {}).items || []).find(i => i.name === 'soulseek') || {};
+
+function openOnboard(step, mode) {
+  obMode = mode || 'setup';
+  const dlg = $('onboard');
+  if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', ''); }
+  (step === 'account' ? obAccount : obChoose)();
+}
+function closeOnboard() { const d = $('onboard'); if (d.open) d.close(); }
+$('onboard').addEventListener('cancel', e => { if (obMode === 'setup') e.preventDefault(); });
+
+function obChoose() {
+  const s = slskItem(), missing = s.state === 'not installed';
+  if (missing) obFirst = 'youtube';
+  $('ob').innerHTML = `
+    <p class="stepno">Setup</p>
+    <h2 id="ob-title">Where should music come from first?</h2>
+    <p class="lede">Every track is looked for there first. Whatever it cannot find comes from the other.</p>
+    <div class="opts" role="radiogroup" aria-label="First source">
+      <label class="opt ${missing ? 'disabled' : ''}" data-first="soulseek">
+        <input type="radio" name="first" value="soulseek" ${missing ? 'disabled' : ''}>
+        <span class="radio"></span><span class="txt"><b>Soulseek <span class="pill ok">Best quality</span></b>
+          <span>Real 320 kbps and lossless files from people's own collections. Needs a free
+            account, made in the next step, and shares your music folder back.</span>
+          ${missing ? `<span class="why">${esc(s.message)}.</span>` : ''}</span></label>
+      <label class="opt" data-first="youtube">
+        <input type="radio" name="first" value="youtube">
+        <span class="radio"></span><span class="txt"><b>YouTube <span class="pill">Simplest</span></b>
+          <span>Nothing to set up. Audio tops out around 130 kbps.</span></span></label>
+    </div>
+    <div class="acts">
+      ${obMode === 'rerun' ? '<button class="btn ghost" type="button" id="ob-cancel">Cancel</button>' : '<span></span>'}
+      <button class="btn primary" type="button" id="ob-next">Continue</button>
+    </div>`;
+  const paint = () => $('ob').querySelectorAll('.opt').forEach(l => {
+    const on = l.dataset.first === obFirst;
+    l.classList.toggle('on', on); l.querySelector('input').checked = on;
+  });
+  paint();
+  $('ob').querySelectorAll('input[name=first]').forEach(r =>
+    r.addEventListener('change', () => { obFirst = r.value; paint(); }));
+  if ($('ob-cancel')) $('ob-cancel').addEventListener('click', closeOnboard);
+  $('ob-next').addEventListener('click', () => {
+    // An account already working needs no second login.
+    if (obFirst === 'soulseek' && !(s.account && s.account.username && s.state === 'connected')) obAccount();
+    else finishSetup(obFirst);
+  });
+}
+
+function obAccount() {
+  const a = slskItem().account || {}, editing = obMode === 'settings';
+  $('ob').innerHTML = `
+    <p class="stepno">${editing ? 'Soulseek' : 'Setup · Soulseek account'}</p>
+    <h2 id="ob-title">${a.username ? 'Your Soulseek account' : 'Make a Soulseek account'}</h2>
+    <p class="lede">There is no sign-up form: choose a name and a password, and the first login
+      creates the account. Use a password you do not use anywhere else.</p>
+    <form id="ob-form" autocomplete="off">
+      <label class="in"><span>Username</span>
+        <input name="username" required maxlength="30" spellcheck="false" autocapitalize="off" value="${esc(a.username || '')}"></label>
+      <label class="in"><span>Password</span>
+        <input name="password" type="password" autocomplete="new-password" ${a.username ? 'placeholder="Leave blank to keep it"' : 'required'}></label>
+      <label class="check"><input type="checkbox" name="share" ${a.username && !a.share ? '' : 'checked'}>
+        <span>Share my music folder<small>${SHARE_NOTE}</small></span></label>
+      <div class="callout"><svg class="i"><use href="#i-info"/></svg><div>For the best results, forward
+        TCP port <b>50300</b> on your router to this machine. Without it, many downloads fail with
+        “the peer did not answer”.</div></div>
+      <p class="err" id="ob-err" hidden></p>
+      <div class="acts">
+        <button class="btn ghost" type="button" id="ob-back">${editing ? 'Cancel' : 'Back'}</button>
+        <button class="btn primary" type="submit" id="ob-go"><span class="spin"></span><span class="lbl">Log in</span></button>
+      </div>
+    </form>`;
+  $('ob-back').addEventListener('click', () => editing ? closeOnboard() : obChoose());
+  $('ob-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = e.target, b = $('ob-go'), lbl = b.querySelector('.lbl');
+    b.disabled = true; b.classList.add('busy'); lbl.textContent = 'Logging in…';
+    $('ob-err').hidden = true;
+    try {
+      await api('/api/soulseek/account',
+        { username: f.username.value.trim(), password: f.password.value, share: f.share.checked ? '1' : '0' });
+      if (editing) { closeOnboard(); flash('Logged in to Soulseek.', true); srcSig = null; poll(); }
+      else await finishSetup('soulseek');
+    } catch (err) {
+      $('ob-err').textContent = err.message; $('ob-err').hidden = false;
+    }
+    b.disabled = false; b.classList.remove('busy'); lbl.textContent = 'Log in';
+  });
+  setTimeout(() => { const f = $('ob-form'); if (f) f.username.focus(); }, 50);
+}
+
+async function finishSetup(first) {
+  let r;
+  try { r = await api('/api/setup/done', { first }); }
+  catch (e) { flash(e.message, false); return; }
+  const s = (r.sources.items || []).find(i => i.name === 'soulseek') || {};
+  const hasSlsk = !!(s.account && s.account.username);
+  const rest = first === 'soulseek'
+    ? 'YouTube fills in whatever Soulseek cannot find.'
+    : hasSlsk ? 'Soulseek fills in whatever YouTube cannot find.'
+              : 'You can add Soulseek later in Settings, for better quality.';
+  $('ob').innerHTML = `
+    <p class="stepno">Setup</p>
+    <h2 id="ob-title">All set</h2>
+    <p class="lede">${first === 'soulseek' ? 'Soulseek' : 'YouTube'} comes first. ${rest}
+      You can change this any time in Settings.</p>
+    <div class="acts"><span></span><button class="btn primary" type="button" id="ob-close">Start</button></div>`;
+  $('ob-close').addEventListener('click', () => { obMode = 'done'; closeOnboard(); srcSig = null; poll(); });
+  $('ob-close').focus();
 }
 
 $('srcs').addEventListener('click', async e => {
@@ -1380,6 +1582,7 @@ async function refresh() {
   $('ytdlp').textContent = d.ytdlp || '…';
   $('appver').textContent = d.app_version || 'dev';
   renderSources(d.sources);
+  if (d.setup && !d.setup.onboarded && !obShown) { obShown = true; openOnboard('choose', 'setup'); }
 
   if (d.bitrate_notes && !Object.keys(NOTES).length) {
     NOTES = d.bitrate_notes; FMT_NOTES = d.format_notes || {}; renderOutput();

@@ -52,6 +52,10 @@ def audio(tmp_path_factory):
             str(d / "a96k.flac"), 30, ["-ar", "96000", "-c:a", "flac", "-sample_fmt", "s32"]
         ),
         "long_mp3": _make(str(d / "long.mp3"), 60, ["-c:a", "libmp3lame", "-b:a", "320k"]),
+        # What YouTube serves: Opus in WebM, around 130 kbps.
+        "opus_webm": _make(str(d / "yt.webm"), 30, ["-c:a", "libopus", "-b:a", "130k"]),
+        # A peer's AAC file.
+        "aac_128": _make(str(d / "a128.m4a"), 30, ["-c:a", "aac", "-b:a", "128k"]),
         "not_audio": _write(str(d / "junk.mp3"), b"this is not an mp3 file at all" * 100),
     }
 

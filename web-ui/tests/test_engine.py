@@ -228,24 +228,28 @@ class FakeYDL:
 
     def extract_info(self, url, download=True):
         FakeYDL.searches.append(url)
-        out = self.opts["outtmpl"].replace("%(ext)s", "mp3")
+        # With no postprocessor (MP3 output) yt-dlp leaves YouTube's own audio,
+        # here Opus in WebM; the app encodes it.
+        ext = "m4a" if self.opts["postprocessors"] else "webm"
+        out = self.opts["outtmpl"].replace("%(ext)s", ext)
         shutil.copy(FakeYDL.fixture, out)
         return {"entries": [{
             "webpage_url": "https://www.youtube.com/watch?v=abc123",
-            "requested_downloads": [{"format_id": "251", "acodec": "opus", "vcodec": "none", "abr": 130}],
+            "requested_downloads": [{"format_id": "251", "acodec": "opus", "vcodec": "none",
+                                     "abr": 130, "filepath": out}],
         }]}
 
 
 @needs_ffmpeg
-def test_youtube_track_is_tagged_and_reported_as_before(playlist, tmp_path, audio, monkeypatch):
-    FakeYDL.fixture, FakeYDL.searches = audio["mp3_192"], []
+def test_youtube_track_is_tagged_and_reported(playlist, tmp_path, audio, monkeypatch):
+    FakeYDL.fixture, FakeYDL.searches = audio["opus_webm"], []
     monkeypatch.setattr(core.yt_dlp, "YoutubeDL", FakeYDL)
     events = run(playlist, tmp_path, None)
     (done,) = of(events, "track_done")
     assert FakeYDL.searches == ["ytsearch1:Enya - Orinoco Flow"]
     assert {k: done[k] for k in ("youtube_url", "source_label", "is_muxed", "used_fallback", "used_query")} == {
         "youtube_url": "https://www.youtube.com/watch?v=abc123",
-        "source_label": "opus 130 kbps (audio-only, format 251)",
+        "source_label": "opus 130 kbps (audio-only, format 251), encoded to 160 kbps",
         "is_muxed": False,
         "used_fallback": False,
         "used_query": "Enya - Orinoco Flow",
@@ -254,3 +258,23 @@ def test_youtube_track_is_tagged_and_reported_as_before(playlist, tmp_path, audi
     from mutagen.id3 import ID3
 
     assert str(ID3(done["path"])["COMM::eng"]) == "Original YouTube URL: https://www.youtube.com/watch?v=abc123"
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("setting, expected", [(128, 128), (192, 160), (320, 160)])
+def test_youtube_is_never_encoded_above_its_source(playlist, tmp_path, audio, monkeypatch, setting, expected):
+    # ~130 kbps Opus: the setting is a ceiling, and 160 is the smallest MP3
+    # step that holds it with MP3's headroom, so 192 and 320 both give 160.
+    FakeYDL.fixture, FakeYDL.searches = audio["opus_webm"], []
+    monkeypatch.setattr(core.yt_dlp, "YoutubeDL", FakeYDL)
+    events = list(core.process_playlist(
+        playlist, setting, "mp3", output_root=str(tmp_path / "music"), sources=None,
+    ))
+    (done,) = of(events, "track_done")
+    from mutagen.mp3 import MP3
+
+    assert round(MP3(done["path"]).info.bitrate / 1000) == expected
+    # YouTube's own audio file is not left behind.
+    assert sorted(os.listdir(os.path.dirname(done["path"]))) == [
+        "Enya - 02 - Orinoco Flow.mp3", "mix.m3u",
+    ]

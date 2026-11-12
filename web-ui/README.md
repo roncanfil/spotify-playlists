@@ -15,9 +15,12 @@ set up, and from YouTube otherwise.
   history for finished playlists that sorts failures first. Each saved track
   carries a tag naming its source, and a track YouTube supplied after Soulseek
   missed says why Soulseek missed.
-- Settings tab: output format, the audio sources (each Connected, Not
-  configured or Error, in the order they are tried, which you can change), and
-  the yt-dlp updater.
+- Settings tab: output format, the audio sources (each Connected, Not set up,
+  Not installed or Error, in the order they are tried, which you can change),
+  the Soulseek account and sharing, and the yt-dlp updater.
+- A setup screen on first visit: Soulseek or YouTube first, and the Soulseek
+  account if Soulseek. It writes slskd's settings, so the compose file holds
+  nothing about Soulseek but the service itself.
 
 The queue's track lists are built from the per-track events each job already
 records, so nothing extra is stored to support them.
@@ -61,16 +64,15 @@ Dockge, none of which can supply a `.env`.
 | `AUTO_UPDATE_YTDLP` | `1` | Reinstall the latest yt-dlp on each start |
 | `SPOTIFY_CLIENT_ID` | empty | Blank hides the Spotify tab |
 | `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8765/callback` | Must match the Spotify dashboard exactly, port included |
-| `SLSKD_URL` | empty | slskd's address, e.g. `http://slskd:5030`. Blank means no Soulseek, and the app behaves exactly as without it |
-| `SLSKD_API_KEY` | empty | The same 16 to 255 character key as on the slskd service |
-| `SLSKD_DOWNLOADS_DIR` | `/downloads` | Where this container sees slskd's finished downloads: the shared `p2p-downloads` volume |
+| `SLSKD_URL` | `http://slskd:5030` | Not in the compose file. Only for an slskd somewhere other than the bundled service |
 
-Soulseek setup, port forwarding and sharing are covered in
-[`../deploy/README.md`](../deploy/README.md#soulseek-optional).
+Soulseek has no settings here: the setup screen collects the account and the
+app writes slskd's settings file. Port forwarding and sharing are covered in
+[`../deploy/README.md`](../deploy/README.md#soulseek).
 
-The music mount is the only path to set. Soulseek's `p2p-downloads` is a named
-volume Docker manages, not a host path: files pass through it on their way into
-the playlist folder and are deleted as soon as they are converted.
+The music mount is the only path to set, though it appears twice: the app and
+slskd both mount it at `/music`, because slskd keeps its files in a hidden
+folder inside it (`SLSKD_APP_DIR`) and the two exchange downloads there.
 `MUSIC_DIR` is not in the compose file
 at all, since the image defaults it to `/music`, as it does
 `YTDLP_UPGRADE_DIR`. The file therefore carries only the settings you might
@@ -89,7 +91,9 @@ disable them.
 music/
 ├── .spotify-playlists/
 │   ├── spotify_token.json                so you connect Spotify only once
-│   └── sources.json                      the source order set in Settings
+│   ├── settings.json                     source order, and whether setup ran
+│   └── slskd/                            slskd's settings, database, downloads
+│       └── slskd.yml                     written by the app; owner-only
 └── Lenox Ave/
     ├── Lenox Ave.csv                     the playlist it came from
     ├── Lenox Ave.m3u                     generated after each run
@@ -169,18 +173,24 @@ That migration also renamed the fields this client reads: `tracks` became
 
 ## Bitrate
 
-`128`, `192` (default) or `320` kbps MP3, or M4A stream copy. For YouTube these
-are transcode targets, not source quality. YouTube's audio ceiling is around 125
-to 130 kbps lossy, so `128` is the only choice that meaningfully degrades
-anything and `320` mostly just costs disk. The UI explains each option as you
-select it.
+`128`, `192` (default) or `320` kbps MP3, or M4A stream copy. The MP3 setting is
+a maximum, not a target: nothing is encoded above what its source holds.
 
-Soulseek changes that: its files are often real 320 kbps MP3s or lossless, so
-`320` is worth choosing when it is set up. The rule there is never to upscale.
-An MP3 at or below the target keeps its audio untouched (only the container and
-tags are rewritten), and a higher-bitrate MP3 or a lossless file is encoded down
-to the target. Soulseek is
-skipped for M4A output, which exists to copy YouTube's AAC untouched.
+- An MP3 from Soulseek at or under the maximum keeps its audio untouched (only
+  the container and tags are rewritten). Above it, it is encoded down, as are
+  lossless files.
+- YouTube's audio is Opus or AAC, never MP3, so it is always encoded, at the
+  smallest MP3 bitrate that holds it: the source's bitrate plus a fifth, since
+  MP3 needs that much more for the same sound (`sources.honest_bitrate`).
+  YouTube's usual ~125 to 135 kbps comes out at 160 at a 192 or 320 setting,
+  not as a 320 that only looks better. AAC and other lossy files from Soulseek
+  follow the same rule.
+- `128` caps YouTube below what its audio needs, so it audibly loses a little.
+
+This matters more now that the library is shared on Soulseek, where a 320
+kbps label on 130 kbps audio is a "fake 320" that other users rightly dislike.
+Soulseek is skipped for M4A output, which exists to copy YouTube's AAC
+untouched.
 
 FLAC output is deliberately not offered. YouTube has no lossless audio to give,
 and it only ever meant roughly four times the file size for identical sound. See
@@ -195,6 +205,7 @@ sources.py     the source interface, and the P2P candidate loop: rank, try,
                check the length, copy or encode
 match.py       which Soulseek file is the track; ported from spotseek (MIT)
 slskd.py       Soulseek through slskd's HTTP API, with the search limiter
+slskd_config.py  slskd's settings file: API key, account, sharing
      ^ imported by
 app.py         Flask API: auth, start/cancel/poll, source order, yt-dlp updater
 spotify.py     Spotify Web API client (PKCE, no client secret)
@@ -229,9 +240,11 @@ replaced and why.
   "confirm you're not a bot" checks that a server IP trips more often than a
   laptop. Optional: delete the service, its `depends_on`, and
   `BGUTIL_POT_BASE_URL`.
-- `slskd`, commented out until you set up Soulseek. It holds the Soulseek
-  account and connections, and downloads into the shared `p2p-downloads`
-  volume. Pinned to 0.26.2, the version the client was verified against.
+- `slskd`, the Soulseek client. It holds the account and connections, keeps
+  its files in `.spotify-playlists/slskd/` inside the music folder, and shares
+  the library. Configured by the app, so the service has no settings to fill
+  in. Comment it out to run without Soulseek. Pinned to 0.26.2, the version
+  the client was verified against.
 
 ## API
 
@@ -248,6 +261,10 @@ replaced and why.
 | `POST` | `/api/cancel-all` | Drop every waiting job, leaving the running one |
 | `POST` | `/api/update-ytdlp` | Upgrade yt-dlp into the state volume |
 | `POST` | `/api/sources/order` | Save the source order (`order=soulseek,youtube`), naming every source once |
+| `POST` | `/api/setup/done` | Finish setup: `first=soulseek` or `first=youtube` goes first |
+| `POST` | `/api/soulseek/account` | Save the account and log in (`username`, `password`, `share`); 400 if Soulseek refuses |
+| `POST` | `/api/soulseek/remove` | Forget the account and log out |
+| `POST` | `/api/soulseek/share` | Turn sharing the music folder on or off (`share=1` or `0`) |
 | `GET` | `/api/spotify/login` | Redirects to Spotify's consent screen |
 | `GET` | `/callback` | OAuth redirect target |
 | `GET` | `/api/spotify/playlists` | Your playlists with artwork and counts |

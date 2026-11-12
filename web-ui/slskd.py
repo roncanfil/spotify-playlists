@@ -3,8 +3,10 @@ Soulseek, through an slskd sidecar (https://github.com/slskd/slskd).
 
 The app never speaks the Soulseek protocol itself: slskd holds the account,
 the peer connections and the transfers, and this module drives its HTTP API.
-Finished files land in a folder shared between the two containers, from which
-sources.P2PSource converts them into the playlist folder.
+slskd keeps its files in a hidden folder inside the music library, mounted at
+the same path in both containers, so finished downloads are visible here as
+they are; sources.P2PSource converts them into the playlist folder. Its
+settings file is written by slskd_config.
 
 Checked against slskd 0.26.2's Swagger and source, and against a live
 instance. Facts that shaped the code, none of them obvious from the docs:
@@ -81,6 +83,18 @@ DOWNLOAD_SUBDIR = "spotify-playlists"
 EMPTY_STREAK_RECONNECT = 3
 LOGIN_WAIT = 30
 _empty_streaks = {}
+
+
+def _is_name_error(exc):
+    """True when a connection failed because the host name does not resolve."""
+    e = exc
+    while e is not None:
+        text = f"{type(e).__name__} {e}"
+        if "NameResolution" in text or "Name or service not known" in text \
+                or "nodename nor servname" in text or "gaierror" in text:
+            return True
+        e = e.__cause__ or e.__context__
+    return False
 
 
 def _parse_time(value):
@@ -175,6 +189,7 @@ class SlskdClient(P2PClient):
 
     @classmethod
     def from_env(cls, env=os.environ):
+        """For running the engine by hand against an slskd you configured yourself."""
         return cls(
             env.get("SLSKD_URL", "").strip(),
             env.get("SLSKD_API_KEY", "").strip(),
@@ -190,7 +205,9 @@ class SlskdClient(P2PClient):
         except requests.RequestException as e:
             raise SlskdError(f"could not reach slskd ({type(e).__name__})") from e
         if resp.status_code == 401:
-            raise SlskdError("slskd refused the API key (check SLSKD_API_KEY on both containers)")
+            raise SlskdError(
+                "slskd refused the app's key; restart slskd so it rereads its settings"
+            )
         return resp
 
     def _json(self, method, path, ok=(200,), **kw):
@@ -202,29 +219,111 @@ class SlskdClient(P2PClient):
     # ------------------------------------------------------------ status
 
     def status(self, timeout=HTTP_TIMEOUT):
-        """("connected" | "not configured" | "error", sentence) for the UI and check()."""
+        """
+        (state, sentence) for the UI and check(). States:
+          "not installed"  slskd's host name does not resolve: its service is
+                           commented out of the compose file
+          "not configured" no URL or key to reach it with
+          "logged out"     slskd runs but is not logged in to Soulseek
+          "error"          unreachable for any other reason, or misbehaving
+          "connected"      logged in and usable
+        """
         if not self.base.startswith("http"):
             return "not configured", "SLSKD_URL is not set"
         if not self.api_key:
-            return "error", "SLSKD_API_KEY is not set"
+            return "not configured", "slskd has no API key yet"
         try:
-            app = self._json("GET", "/application", timeout=timeout)
-        except SlskdError as e:
-            return "error", str(e)
-        server = (app or {}).get("server") or {}
-        if not server.get("isLoggedIn"):
-            state = server.get("state") or "unknown"
-            return "error", (
-                f"slskd is not logged in to Soulseek (server state: {state}); "
-                "check SLSKD_SLSK_USERNAME and SLSKD_SLSK_PASSWORD on the slskd container"
+            resp = self.http.request(
+                "GET", self.base + "/application", timeout=timeout,
             )
+        except requests.ConnectionError as e:
+            if _is_name_error(e):
+                return "not installed", (
+                    "slskd is not running: its service is commented out of docker-compose.yml"
+                )
+            return "error", "slskd is not answering (it may still be starting)"
+        except requests.RequestException as e:
+            return "error", f"could not reach slskd ({type(e).__name__})"
+        if resp.status_code == 401:
+            return "error", "slskd refused the app's key; restart slskd so it rereads its settings"
+        if resp.status_code != 200:
+            return "error", f"slskd answered {resp.status_code}"
+        app = resp.json() or {}
+        server = app.get("server") or {}
+        if not server.get("isLoggedIn"):
+            return "logged out", server.get("state") or "Disconnected"
         if not os.path.isdir(self.downloads_dir):
             return "error", (
-                f"slskd's download folder is not mounted here at {self.downloads_dir}; "
-                "both containers need the same volume at that path"
+                f"slskd's download folder {self.downloads_dir} is not visible here; "
+                "both services need the same music folder mounted at /music"
             )
         user = (app.get("user") or {}).get("username") or "?"
         return "connected", f"logged in as {user}"
+
+    def connect(self, should_cancel=None, wait=LOGIN_WAIT):
+        """
+        (Re)connect with whatever account the settings file now holds, and
+        wait for the login. True once logged in. slskd answers the connect
+        call with 200 even when the password is wrong; the outcome only shows
+        as the server state settling on Disconnected, so poll for it.
+        """
+        try:
+            self._req("DELETE", "/server", json="reconnecting with new settings")
+            self._req("PUT", "/server")
+        except SlskdError:
+            return False
+        deadline = self.clock() + wait
+        settled = 0
+        while self.clock() < deadline:
+            if should_cancel and should_cancel():
+                raise Cancelled()
+            try:
+                st = self._json("GET", "/server") or {}
+            except SlskdError:
+                st = {}
+            if st.get("isLoggedIn"):
+                return True
+            # Two polls in a row at a plain Disconnected, after the attempt has
+            # had a moment, is a refused login rather than one still going.
+            if st.get("state") == "Disconnected" and not st.get("isConnecting") \
+                    and not st.get("isLoggingIn"):
+                settled += 1
+                if settled >= 2:
+                    return False
+            else:
+                settled = 0
+            self.sleep(POLL)
+        return False
+
+    def wait_for_options(self, ready, wait=15):
+        """
+        Poll slskd's live options until ready(options) is true; False on
+        timeout. slskd rereads its settings file a moment after it changes,
+        and connecting before then would log in with the old account.
+        """
+        deadline = self.clock() + wait
+        while self.clock() < deadline:
+            try:
+                if ready(self._json("GET", "/options") or {}):
+                    return True
+            except SlskdError:
+                pass
+            self.sleep(0.5)
+        return False
+
+    def disconnect(self):
+        try:
+            self._req("DELETE", "/server", json="account removed")
+        except SlskdError:
+            pass
+
+    def rescan_shares(self):
+        """Ask slskd to rescan what it shares, so new downloads are offered too."""
+        try:
+            self._req("PUT", "/shares")
+            return True
+        except SlskdError:
+            return False
 
     def check(self):
         state, message = self.status()
@@ -300,22 +399,7 @@ class SlskdClient(P2PClient):
         """Drop and re-establish slskd's server connection; True once logged in again."""
         print("[soulseek] several searches in a row found nothing; reconnecting slskd",
               file=sys.stderr)
-        try:
-            self._req("DELETE", "/server", json="reconnecting after empty searches")
-            self._req("PUT", "/server")
-        except SlskdError:
-            return False
-        deadline = self.clock() + LOGIN_WAIT
-        while self.clock() < deadline:
-            if should_cancel and should_cancel():
-                raise Cancelled()
-            try:
-                if (self._json("GET", "/server") or {}).get("isLoggedIn"):
-                    return True
-            except SlskdError:
-                pass
-            self.sleep(POLL)
-        return False
+        return self.connect(should_cancel)
 
     def _stop_search(self, sid):
         try:

@@ -10,7 +10,9 @@ import shutil
 import subprocess
 
 import match
-from sources import Cancelled, Request, parse_duration_ms
+from sources import (
+    AudioInfo, Cancelled, Request, convert, honest_bitrate, parse_duration_ms, probe_audio,
+)
 
 
 # YouTube's proof-of-origin requirement means yt-dlp's default player-client
@@ -21,23 +23,28 @@ from sources import Cancelled, Request, parse_duration_ms
 # default: normal videos keep giving audio-only opus (format 251).
 FALLBACK_PLAYER_CLIENT = "android"
 
-# YouTube's audio ceiling is ~125-130 kbps opus/AAC, so these are transcode
-# targets, not source quality. 192 is the default because the extra loss on top
-# of the source is negligible there; see BITRATE_NOTES.
+# The MP3 bitrate is a ceiling, not a target: nothing is encoded above what its
+# source holds (sources.honest_bitrate). YouTube's ~130 kbps Opus therefore
+# comes out at 160 at a 192 or 320 setting, and a Soulseek MP3 at or under the
+# setting is kept as it is. 192 is the default: above anything YouTube gives,
+# and close to transparent for Soulseek files encoded down to it.
 SUPPORTED_FORMATS = ("mp3", "m4a")
 DEFAULT_FORMAT = "mp3"
 FORMAT_NOTES = {
-    "mp3": "Re-encodes to MP3. Universally playable; costs one lossy generation.",
+    "mp3": "Plays anywhere. Nothing is encoded above its source's quality.",
     "m4a": "Copies YouTube's AAC stream untouched -- no re-encode, no quality "
-    "loss, smaller files. Bitrate does not apply.",
+    "loss, smaller files. Always from YouTube; bitrate does not apply.",
 }
 
 SUPPORTED_BITRATES = (128, 192, 320)
 DEFAULT_BITRATE = 192
 BITRATE_NOTES = {
-    128: "at or below the source bitrate -- adds audible generational loss",
-    192: "comfortably above the ~130 kbps source; added loss is negligible",
-    320: "transparent to the source, but ~1.7x the size of 192 for no gain",
+    128: "the most any file gets. Smallest files, but YouTube tracks lose a "
+    "little: MP3 needs more than 128 to hold YouTube's ~130 kbps audio",
+    192: "the most any file gets. YouTube tracks come out at about 160, "
+    "Soulseek's 320s and lossless files are encoded down to 192",
+    320: "the most any file gets. Soulseek's 320s are kept as they are; "
+    "YouTube tracks still come out at about 160, never padded to 320",
 }
 
 _BLOCKED_CLIENT_SIGNS = (
@@ -588,6 +595,10 @@ def normalize_bitrate(bitrate):
     return value
 
 
+# Suffix of YouTube's raw audio before it is encoded to MP3.
+YT_SOURCE_SUFFIX = ".yt-source"
+
+
 def create_ydl_opts(
     output_dir,
     basename,
@@ -595,8 +606,14 @@ def create_ydl_opts(
     audio_format=DEFAULT_FORMAT,
     player_client=None,
 ):
-    """yt-dlp options: audio extract only; tags are written afterward (Mutagen / ffmpeg)."""
-    filename = basename
+    """
+    yt-dlp options: audio only; tags are written afterward (Mutagen / ffmpeg).
+
+    M4A is extracted by yt-dlp itself, as a stream copy. For MP3, yt-dlp only
+    downloads YouTube's own audio, to a side file, and YouTubeSource encodes
+    it: the bitrate depends on the stream yt-dlp picked, which is not known
+    until it has picked one (see sources.honest_bitrate).
+    """
     audio_format = normalize_audio_format(audio_format)
 
     if audio_format == "m4a":
@@ -604,23 +621,24 @@ def create_ydl_opts(
         # of transcoding -- that is the whole point of picking m4a. Falls back to
         # whatever exists (e.g. the SABR-only progressive format 18, also AAC).
         fmt = "bestaudio[ext=m4a]/bestaudio/best"
-        extract_pp = {"key": "FFmpegExtractAudio", "preferredcodec": "m4a"}
+        postprocessors = [{"key": "FFmpegExtractAudio", "preferredcodec": "m4a"}]
+        outtmpl = f"{output_dir}/{basename}.%(ext)s"
     else:
+        normalize_bitrate(bitrate)
         fmt = "bestaudio/best"
-        extract_pp = {
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": str(normalize_bitrate(bitrate)),
-        }
+        postprocessors = []
+        # A name of its own, so an existing .m4a of the same track is never
+        # mistaken by yt-dlp for this download, or overwritten by it.
+        outtmpl = f"{output_dir}/{basename}{YT_SOURCE_SUFFIX}.%(ext)s"
     pp_args = {}
 
     return {
         "format": fmt,
-        "outtmpl": f"{output_dir}/{filename}.%(ext)s",
+        "outtmpl": outtmpl,
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
-        "postprocessors": [extract_pp],
+        "postprocessors": postprocessors,
         "writethumbnail": False,
         "writeinfojson": False,
         "embedsubtitles": False,
@@ -766,6 +784,8 @@ class YouTubeSource:
         source_label, is_muxed = describe_source(entry)
 
         out_path = req.target_path
+        if audio_format == "mp3":
+            source_label += self._encode(entry, req)
         if not os.path.isfile(out_path):
             # The search matched and yt-dlp reported no error, so this is the
             # extract/transcode step having produced nothing usable.
@@ -783,6 +803,41 @@ class YouTubeSource:
             "used_query": used_query,
             "comment": youtube_comment(youtube_url),
         }
+
+    def _encode(self, entry, req):
+        """
+        Encode YouTube's own audio to req.target_path at the honest bitrate, and
+        return the label suffix. The stream's bitrate comes from yt-dlp's format
+        data; when YouTube did not report one, the file is probed.
+        """
+        raw = _downloaded_path(entry)
+        if not raw or not os.path.isfile(raw):
+            raise FileNotFoundError("yt-dlp reported a download but left no audio file")
+        try:
+            info = probe_audio(raw)
+            downloads = (entry or {}).get("requested_downloads") or []
+            fmt = downloads[0] if downloads else (entry or {})
+            kbps = int(round(float(fmt.get("abr") or 0))) or (info.kbps if info else 0)
+            if info is None:
+                info = AudioInfo(kind="lossy", codec=str(fmt.get("acodec") or "?"), kbps=kbps,
+                                 length=0.0, sample_rate=int(fmt.get("asr") or 0),
+                                 channels=int(fmt.get("audio_channels") or 0), bits=0)
+            rate = honest_bitrate(kbps, req.bitrate)
+            convert(raw, req.target_path, "encode", rate, info)
+        finally:
+            try:
+                os.remove(raw)
+            except OSError:
+                pass
+        return f", encoded to {rate} kbps"
+
+
+def _downloaded_path(entry):
+    """Where yt-dlp saved the stream, or None."""
+    for d in (entry or {}).get("requested_downloads") or []:
+        if d.get("filepath"):
+            return d["filepath"]
+    return (entry or {}).get("filepath")
 
 
 def default_sources(env=None):
@@ -1075,7 +1130,7 @@ def main():
         nargs="?",
         default=str(DEFAULT_BITRATE),
         choices=[str(b) for b in SUPPORTED_BITRATES] + ["flac"],
-        help=f"MP3 bitrate: {', '.join(str(b) for b in SUPPORTED_BITRATES)}. "
+        help=f"Maximum MP3 bitrate: {', '.join(str(b) for b in SUPPORTED_BITRATES)}. "
         f"Default {DEFAULT_BITRATE}.",
     )
     parser.add_argument(

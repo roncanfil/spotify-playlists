@@ -46,6 +46,22 @@ def test_plan_conversion_rejects_poor_lossy(kind, kbps):
         plan_conversion(kind, kbps, 320)
 
 
+@pytest.mark.parametrize("source, target, expected", [
+    (130, 320, 160),   # YouTube's Opus: the step that holds it, not the setting
+    (126, 320, 160),   # live run: 128 would have lost detail
+    (130, 192, 160),
+    (130, 128, 128),   # never above the setting
+    (128, 320, 160),   # a peer's 128 kbps AAC
+    (96, 320, 128),
+    (256, 320, 320),
+    (256, 192, 192),
+    (0, 192, 192),     # unknown: the setting
+    (400, 320, 320),
+])
+def test_honest_bitrate(source, target, expected):
+    assert sources.honest_bitrate(source, target) == expected
+
+
 def test_parse_duration_ms():
     assert sources.parse_duration_ms("185733") == 186
     assert sources.parse_duration_ms("266000.0") == 266
@@ -167,6 +183,19 @@ def test_mp3_below_the_target_is_kept_as_is(tmp_path, audio):
     assert result["conversion"] == "copy"
     assert mp3_kbps(req.target_path) == 192
     assert "kept as is" in result["source_label"]
+
+
+@needs_ffmpeg
+def test_a_peers_aac_is_encoded_for_its_own_quality_not_the_setting(tmp_path, audio):
+    name = r"Enya\02 Orinoco Flow.m4a"
+    source, _ = make_source(
+        tmp_path, {"enya orinoco flow": [resp("bob", sf(name, 520_000, 128))]}, {name: audio["aac_128"]}
+    )
+    req = request(tmp_path, bitrate=320)
+    result = source.fetch(req)
+    assert result["conversion"] == "encode"
+    assert mp3_kbps(req.target_path) == 160
+    assert "aac" in result["source_label"] and "encoded to 160 kbps" in result["source_label"]
 
 
 @needs_ffmpeg

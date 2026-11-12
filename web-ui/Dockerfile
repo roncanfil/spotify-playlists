@@ -6,8 +6,8 @@ FROM python:3.13-slim
 # change every build and would otherwise bust the layer cache.
 LABEL org.opencontainers.image.source="https://github.com/roncanfil/spotify-playlists" \
       org.opencontainers.image.url="https://github.com/roncanfil/spotify-playlists" \
-      org.opencontainers.image.title="Playlist Downloader" \
-      org.opencontainers.image.description="Web UI for downloading Spotify playlists as tagged MP3 or FLAC files." \
+      org.opencontainers.image.title="Spotify Playlists" \
+      org.opencontainers.image.description="Web UI that turns Spotify playlists, albums and songs into tagged MP3s, from Soulseek or YouTube." \
       org.opencontainers.image.licenses="NOASSERTION"
 
 # ffmpeg does the audio extraction and the encoding. Debian's `ffmpeg` package

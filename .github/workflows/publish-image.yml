@@ -52,8 +52,8 @@ jobs:
             type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
             type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
           labels: |
-            org.opencontainers.image.title=Playlist Downloader
-            org.opencontainers.image.description=Web UI for downloading Spotify playlists as tagged MP3 or FLAC files.
+            org.opencontainers.image.title=Spotify Playlists
+            org.opencontainers.image.description=Web UI that turns Spotify playlists, albums and songs into tagged MP3s, from Soulseek or YouTube.
 
       - uses: docker/build-push-action@v6
         with:

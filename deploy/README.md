@@ -24,6 +24,16 @@ Set the music path to an absolute one, such as `/DATA/Media/Music` on CasaOS.
 The default is relative and CasaOS picks the project directory, so a relative
 path lands somewhere you did not choose.
 
+Keep the `networks:` lines. The app reaches slskd and bgutil-provider by name,
+and that only works on a network of their own; on Docker's default `bridge`
+network, where CasaOS otherwise puts apps, the setup screen says it cannot
+find slskd. An install from before this was added can be fixed in place:
+
+```bash
+docker network create spotify-playlists
+for c in spotify-playlists slskd bgutil-provider; do docker network connect spotify-playlists $c; done
+```
+
 ## Any Linux box, Proxmox guest, or VPS
 
 ```bash

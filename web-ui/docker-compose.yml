@@ -36,6 +36,8 @@ services:
       - ./music:/music
     depends_on:
       - bgutil-provider
+    networks:
+      - spotify-playlists
 
   # Answers YouTube's bot checks. Optional: drop this service, the depends_on
   # and BGUTIL_POT_BASE_URL.
@@ -45,6 +47,8 @@ services:
     restart: unless-stopped
     expose:
       - "4416"
+    networks:
+      - spotify-playlists
 
   # Soulseek, for real 320 kbps and lossless files. Nothing to fill in here:
   # the app's setup screen asks for the account and configures it. Shares your
@@ -69,3 +73,13 @@ services:
     volumes:
       # The same path as the app's music folder, above.
       - ./music:/music
+    networks:
+      - spotify-playlists
+
+# The app finds slskd and bgutil-provider by name, which only works on a
+# network of their own: Docker's default "bridge" network, where CasaOS and
+# some other tools put containers, has no names. Keep this, and keep every
+# service on it.
+networks:
+  spotify-playlists:
+    name: spotify-playlists

@@ -222,7 +222,7 @@ class SlskdClient(P2PClient):
         """
         (state, sentence) for the UI and check(). States:
           "not installed"  slskd's host name does not resolve: its service is
-                           commented out of the compose file
+                           missing, stopped, or on another Docker network
           "not configured" no URL or key to reach it with
           "logged out"     slskd runs but is not logged in to Soulseek
           "error"          unreachable for any other reason, or misbehaving
@@ -238,8 +238,14 @@ class SlskdClient(P2PClient):
             )
         except requests.ConnectionError as e:
             if _is_name_error(e):
+                # All a failed lookup proves is that the name does not resolve:
+                # the service is missing, stopped, or on another Docker network
+                # (CasaOS can put apps on separate networks).
+                host = self.base.split("//", 1)[-1].split("/", 1)[0].split(":", 1)[0]
                 return "not installed", (
-                    "slskd is not running: its service is commented out of docker-compose.yml"
+                    f"The app cannot find slskd at {self.base}: the name {host} does not "
+                    "resolve. Check that the slskd service is in the compose file, is "
+                    "running, and is on the same Docker network as the app."
                 )
             return "error", "slskd is not answering (it may still be starting)"
         except requests.RequestException as e:

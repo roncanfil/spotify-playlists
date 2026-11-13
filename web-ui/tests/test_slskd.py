@@ -419,7 +419,7 @@ def test_status_unreachable(tmp_path):
     assert client.status() == ("error", "slskd is not answering (it may still be starting)")
 
 
-def test_status_when_the_service_is_commented_out(tmp_path):
+def test_status_when_the_slskd_name_does_not_resolve(tmp_path):
     import socket
 
     import requests
@@ -433,7 +433,7 @@ def test_status_when_the_service_is_commented_out(tmp_path):
 
     client = SlskdClient("http://slskd:5030", "k" * 32, str(tmp_path), session=NoHost({}))
     state, msg = client.status()
-    assert state == "not installed" and "commented out" in msg
+    assert state == "not installed" and "name slskd does not resolve" in msg
 
 
 def server_routes(states):

@@ -315,7 +315,7 @@ class SpotifyClient:
                     "Radar, are refused no matter what this app does. "
                     "Workarounds: request a quota extension on the Spotify "
                     "dashboard, or export the playlist at exportify.app and "
-                    "queue it from the CSV tab."
+                    "upload it as a CSV at the bottom of the Spotify tab."
                     + (f" Spotify said: {detail}" if detail else "")
                 )
             raise SpotifyError(

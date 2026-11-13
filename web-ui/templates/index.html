@@ -171,7 +171,7 @@
     letter-spacing:-.005em; text-transform:uppercase; }
   .panel > h2 { margin-bottom:10px; }
   .panel-head .sub { color:var(--muted); font-size:13px; }
-  .lede { margin:0 0 16px; color:var(--ink-2); font-size:15px; max-width:68ch; }
+  .lede { margin:0 0 16px; color:var(--ink-2); font-size:15px; }
   .lede b { color:var(--ink); }
   .fine { color:var(--muted); font-size:13px; margin:0; }
   .fine b { color:var(--ink); font-weight:650; }
@@ -359,6 +359,22 @@
   .skeleton div { height:80px; background:linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
     background-size:200% 100%; animation:shimmer 1.4s linear infinite; }
   @keyframes shimmer { to { background-position:-200% 0; } }
+
+  details.how { margin:0 0 16px; }
+  details.how summary { cursor:pointer; font-weight:800; font-size:13px; letter-spacing:.05em; text-transform:uppercase;
+    color:var(--accent); list-style:none; display:inline-flex; align-items:center; gap:6px; }
+  details.how summary::-webkit-details-marker { display:none; }
+  details.how summary::before { content:"+"; font-size:16px; width:12px; }
+  details.how[open] summary::before { content:"\2212"; }
+  details.how ol.steps { margin-top:14px; }
+  .paused { display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px; padding:16px; margin-bottom:14px;
+    background:var(--hot); color:var(--hot-ink); }
+  .paused .txt { flex:1 1 280px; min-width:0; }
+  .paused b { display:block; font-size:26px; font-weight:900; font-stretch:66%; line-height:1; text-transform:uppercase; }
+  .paused span { display:block; margin-top:4px; font-size:14px; font-weight:550; }
+  .paused .btn { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .paused .btn:hover { background:var(--blue); border-color:var(--blue); color:#fff; }
+  .job-head .acts { display:flex; gap:6px; flex:none; }
 
   /* ------------------------------------------------------------ csv */
   .drop {
@@ -619,7 +635,6 @@
   </div>
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button class="tab" role="tab" data-tab="spotify" aria-selected="true" aria-controls="view-spotify">Spotify</button>
-    <button class="tab" role="tab" data-tab="csv" aria-selected="false" aria-controls="view-csv">CSV file</button>
     <button class="tab" role="tab" data-tab="queue" aria-selected="false" aria-controls="view-queue">Queue<span class="count" id="qbadge" hidden>0</span></button>
     <button class="tab settings" role="tab" data-tab="settings" aria-selected="false" aria-controls="view-settings"><svg class="i"><use href="#i-gear"/></svg><span class="lbl">Settings</span></button>
   </nav>
@@ -729,33 +744,31 @@
       <div class="grid" id="sp-grid" hidden></div>
       <div class="empty" id="sp-empty" hidden>No playlists found.</div>
     </div>
-  </section>
 
-  <!-- ============================================================ CSV -->
-  <section class="view" id="view-csv" role="tabpanel">
-    <div class="panel measure">
-      <h2>Get a CSV from Exportify</h2>
-      <p class="lede">Use this when you would rather not connect Spotify here. Exportify is a separate
-        site that turns a Spotify playlist into a CSV file.</p>
-      <ol class="steps">
-        <li>Open <a href="https://exportify.app/" target="_blank" rel="noopener noreferrer"><b>exportify.app</b>
-          <svg class="i" style="font-size:12px"><use href="#i-ext"/></svg></a> and click <b>Get Started</b>.</li>
-        <li>Log in with Spotify and allow read-only access to your playlists.</li>
-        <li>Find the playlist you want and click its <b>export</b> button to get a <code>.csv</code> file.</li>
-        <li>Drop that file below.</li>
-      </ol>
-
+    <div class="panel measure" id="csv-panel">
+      <h2>Have a CSV file?</h2>
+      <p class="lede">For a playlist a link or your account cannot reach: a private or long one with no
+        account connected, or one Spotify refuses. Any CSV with Spotify's column names works.</p>
+      <details class="how">
+        <summary>Get one from Exportify</summary>
+        <ol class="steps">
+          <li>Open <a href="https://exportify.app/" target="_blank" rel="noopener noreferrer"><b>exportify.app</b>
+            <svg class="i" style="font-size:12px"><use href="#i-ext"/></svg></a> and click <b>Get Started</b>.</li>
+          <li>Log in with Spotify and allow read-only access to your playlists.</li>
+          <li>Find the playlist you want and click its <b>export</b> button to get a <code>.csv</code> file.</li>
+          <li>Drop that file below.</li>
+        </ol>
+      </details>
       <div class="drop" id="drop" role="button" tabindex="0" aria-label="Choose a CSV file">
         <span class="ico"><svg class="i" id="drop-icon"><use href="#i-upload"/></svg></span>
         <span class="t" id="drop-text">Drop the CSV here, or click to choose</span>
         <span class="s" id="drop-sub">.csv only</span>
         <input type="file" id="file" accept=".csv,text/csv" hidden>
       </div>
-      <p class="fine" style="margin-top:12px">The playlist name becomes the folder name, and it gets the CSV
-        and an <code>.m3u</code> alongside the tracks. Tracks you already have are skipped.</p>
-
+      <p class="fine" style="margin-top:12px">The file name becomes the folder name, and the folder gets the CSV
+        and an <code>.m3u</code> beside the songs. Songs you already have are skipped.</p>
       <div class="actions">
-        <button class="btn primary lg" id="btn-start" type="button">Process Playlist</button>
+        <button class="btn primary lg" id="btn-start" type="button">Download</button>
         <span class="hint out-hint"></span>
       </div>
     </div>
@@ -765,6 +778,7 @@
   <section class="view stack" id="view-queue" role="tabpanel">
     <div class="panel">
       <div class="panel-head"><h2>In progress</h2></div>
+      <div id="q-paused"></div>
       <div id="q-current"><div class="empty left">Nothing running.</div></div>
       <div id="q-failbox"></div>
     </div>
@@ -911,7 +925,7 @@ document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () =>
 function showTab(name) {
   curTab = name;
   document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
-  ['spotify', 'csv', 'queue', 'settings'].forEach(v => $('view-' + v).classList.toggle('on', v === name));
+  ['spotify', 'queue', 'settings'].forEach(v => $('view-' + v).classList.toggle('on', v === name));
   if (name === 'spotify' && spConnected && !spLoaded) loadSpotify();
 }
 
@@ -1266,18 +1280,18 @@ $('btn-start').addEventListener('click', async () => {
     file.value = ''; setDropFile(null);
     showTab('queue');
   } catch (e) { flash(e.message, false); }
-  b.disabled = false; b.textContent = 'Process Playlist';
+  b.disabled = false; b.textContent = 'Download';
   poll();
 });
 
 /* ------------------------------------------------------------ queue actions */
 async function cancelJob(job, running) {
   const ok = await confirmAction({
-    title: running ? 'Cancel this playlist?' : 'Remove from the queue?',
+    title: running ? 'Stop this playlist?' : 'Remove from the queue?',
     body: running
-      ? `“${job.name}” stops after the current track. Tracks already saved are kept.`
-      : `“${job.name}” will not be processed.`,
-    action: running ? 'Cancel playlist' : 'Remove',
+      ? `“${job.name}” stops now and leaves the queue. Songs already saved stay in its folder; the rest are only downloaded if you run it again. To carry on later instead, use Pause.`
+      : `“${job.name}” leaves the queue. Nothing in its folder is touched.`,
+    action: running ? 'Stop playlist' : 'Remove',
   });
   if (!ok) return;
   try { await api('/api/cancel', { job_id: job.id }); poll(); }
@@ -1398,7 +1412,10 @@ function renderCurrent(j) {
     host.innerHTML = `
       <div class="job-head">
         <div class="title"><h3></h3><div class="fmt"><span class="pill"></span></div></div>
-        <button class="btn sm danger" type="button">Cancel</button>
+        <div class="acts">
+          <button class="btn sm" type="button" data-act="pause">Pause</button>
+          <button class="btn sm danger" type="button" data-act="stop">Stop</button>
+        </div>
       </div>
       <div class="progress"><div class="track"><i></i></div><span class="pct num"></span></div>
       <div class="stats">
@@ -1413,7 +1430,8 @@ function renderCurrent(j) {
     cur = {
       id: j.id,
       els: {
-        name: host.querySelector('h3'), fmt: host.querySelector('.pill'), cancel: host.querySelector('.btn'),
+        name: host.querySelector('h3'), fmt: host.querySelector('.pill'), cancel: host.querySelector('[data-act=stop]'),
+        pause: host.querySelector('[data-act=pause]'),
         bar: host.querySelector('.track i'), pct: host.querySelector('.pct'), now: host.querySelector('.now'),
         tk: host.querySelector('.tk'), stats: {},
       },
@@ -1421,6 +1439,7 @@ function renderCurrent(j) {
     };
     host.querySelectorAll('.stat').forEach(s => { cur.els.stats[s.querySelector('.v').dataset.k] = s; });
     cur.els.cancel.addEventListener('click', () => cancelJob(j, true));
+    cur.els.pause.addEventListener('click', pauseQueue);
   }
   const e = cur.els;
   e.name.textContent = j.name;
@@ -1454,6 +1473,36 @@ function renderCurrent(j) {
   }
 }
 
+/* ------------------------------------------------------------ pause */
+// Pause stops the running playlist and holds the queue with it first in
+// line. The queue is saved on the server, so it is safe to update the app
+// while paused: it comes back paused, and Resume carries on, skipping every
+// song already saved.
+async function pauseQueue() {
+  try { await api('/api/pause'); flash('Paused. Safe to update the app; press Resume to carry on.', true); }
+  catch (e) { flash(e.message, false); }
+  poll();
+}
+async function resumeQueue() {
+  try { await api('/api/resume'); flash('Resumed.', true); } catch (e) { flash(e.message, false); }
+  poll();
+}
+let pausedSig = '';
+function renderPaused(d) {
+  const first = (d.pending || [])[0];
+  const sig = d.paused ? `${d.paused}|${first ? first.id : ''}|${!!d.current}` : '';
+  $('q-current').hidden = !!d.paused && !d.current;
+  if (sig === pausedSig) return;
+  pausedSig = sig;
+  $('q-paused').innerHTML = !d.paused ? '' : `<div class="paused">
+      <div class="txt"><b>${d.current ? 'Pausing…' : 'Paused'}</b>
+        <span>${first ? `“${esc(first.name)}” carries on from where it stopped. ` : ''}Nothing downloads until you
+          resume. It is safe to update the app now: the queue is saved and comes back paused.</span></div>
+      <button class="btn lg" type="button" id="btn-resume">Resume</button>
+    </div>`;
+  if ($('btn-resume')) $('btn-resume').addEventListener('click', resumeQueue);
+}
+
 /* ------------------------------------------------------------ the band */
 // Whatever is running owns the band: its name huge, vermilion filling the
 // blue as songs finish. A job that finished in the last ten minutes stays up
@@ -1476,6 +1525,9 @@ function renderBand(d) {
     if (j.failed) cat.push(['', `${j.failed} failed`]);
     if (waiting) cat.push(['', `${waiting} waiting`]);
     if (j.current) cat.push(['trk', j.current]);
+  } else if (d.paused) {
+    word = ((d.pending || [])[0] || {}).name || 'Paused'; idle = true;
+    cat.push(['live', 'Paused'], ['fmt', 'Resume on the Queue tab']);
   } else if (last && last.finished_at && now - last.finished_at < BAND_HOLD && last.state !== 'cancelled') {
     word = last.name; fill = 1; idle = true;
     cat.push(['live', last.state === 'error' ? 'Stopped' : 'Done'],
@@ -1526,8 +1578,8 @@ function renderPending(jobs) {
   host.innerHTML = jobs.map((j, i) => `<div class="row">
       <span class="pos">${i + 1}</span>
       <div class="nm">${esc(j.name)}</div>
-      <button class="btn ghost sm danger act" type="button" data-cancel="${esc(j.id)}">Cancel</button>
-      <div class="sub"><span class="fmt">${esc(j.format)}</span></div>
+      <button class="btn ghost sm danger act" type="button" data-cancel="${esc(j.id)}">Remove</button>
+      <div class="sub">${j.state === 'paused' ? '<span class="pill warn">Paused</span>' : ''}<span class="fmt">${esc(j.format)}</span></div>
     </div>`).join('');
   host.querySelectorAll('[data-cancel]').forEach(b =>
     b.addEventListener('click', () => cancelJob(jobs.find(j => j.id === b.dataset.cancel) || { id: b.dataset.cancel, name: '' }, false)));
@@ -1887,6 +1939,7 @@ async function refresh() {
   if (spConnected && !spLoaded) loadSpotify();
 
   renderBand(d);
+  renderPaused(d);
   renderCurrent(d.current);
   renderPending(d.pending || []);
   renderRecent(d.recent || []);
@@ -1897,7 +1950,8 @@ async function refresh() {
   $('qbadge').textContent = n;
   const s = $('status');
   s.className = 'status ' + (d.current ? 'working' : waiting ? 'waiting' : '');
-  $('status-word').textContent = d.current ? 'Working' : (waiting ? `${waiting} waiting` : 'Ready');
+  $('status-word').textContent = d.current ? 'Working'
+    : d.paused ? 'Paused' : (waiting ? `${waiting} waiting` : 'Ready');
   $('status-num').textContent = d.current ? `${d.current.done}/${d.current.total}` : '';
   $('status-num').hidden = !d.current;
   return n > 0;

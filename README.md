@@ -58,9 +58,10 @@ the Spotify redirect URI.
 - Keep a playlist in sync: every hour the app checks Spotify and downloads
   songs added since, so a playlist someone keeps adding to stays mirrored in
   its folder. Songs removed on Spotify stay in the folder and leave the `.m3u`.
-- CSV tab: upload an Exportify CSV instead, if you would rather not connect
-  Spotify.
-- Queue tab: one job at a time with live progress, filters for Saved, Skipped
+- A CSV file, at the bottom of the Spotify tab, for a playlist neither a link
+  nor your account can reach (an Exportify export, for example).
+- Queue tab: one job at a time with live progress, Pause and Resume (the
+  queue is saved, so you can update the app while paused and carry on after), filters for Saved, Skipped
   and Failed, a separate list of failures with their errors, and a per-track
   history for finished playlists that sorts failures first. Each saved track
   shows which source it came from.

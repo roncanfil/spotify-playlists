@@ -5,6 +5,8 @@ No network: slskd's client is replaced by a fake that records its calls.
 """
 
 import json
+import threading
+import time
 import os
 import tempfile
 
@@ -566,3 +568,75 @@ def test_lite_state_leaves_out_the_settings_that_never_change(client):
         assert key in full and key not in lite
     for key in ("sources", "sync", "spotify", "setup", "current", "pending", "recent", "playlists"):
         assert key in lite
+
+
+# ---------------------------------------------------------------- saved queue and pause
+
+
+def make_csv(name):
+    path = webapp.playlist_csv_path(name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as fh:
+        fh.write("Track Name,Artist Name(s)\n")
+    return path
+
+
+def test_the_queue_is_saved_and_comes_back(tmp_path):
+    q = webapp.JobQueue.__new__(webapp.JobQueue)
+    webapp.JobQueue.__init__(q, str(tmp_path / "queue.json"))
+    q.paused = True  # keep the worker from starting what is added
+    q.add(webapp.Job(make_csv("Mix"), 320, source="sync", name="Mix", numbered=False))
+    q.add(webapp.Job(make_csv("Gone"), 192))
+    os.remove(webapp.playlist_csv_path("Gone"))  # a job whose CSV vanished is dropped
+    q2 = webapp.JobQueue.__new__(webapp.JobQueue)
+    webapp.JobQueue.__init__(q2, str(tmp_path / "queue.json"))
+    assert q2.restore() == 1
+    (j,) = list(q2._pending)
+    assert (j.name, j.bitrate, j.source, j.numbered, j.state, q2.paused) == ("Mix", 320, "sync", False, "paused", True)
+
+
+def test_pausing_puts_the_running_job_back_first_and_holds_the_queue(tmp_path):
+    q = webapp.JobQueue.__new__(webapp.JobQueue)
+    webapp.JobQueue.__init__(q, str(tmp_path / "queue.json"))
+    started = threading.Event()
+
+    def slow_run(self):
+        with self._lock:
+            self.state = "running"
+        started.set()
+        while not self.cancelled:
+            time.sleep(0.02)
+        with self._lock:
+            self.state = "paused" if self._pausing else "cancelled"
+
+    j = webapp.Job(make_csv("Long"), 192)
+    j.run = slow_run.__get__(j)
+    old_id = j.id
+    q.add(j)
+    assert started.wait(3)
+    assert q.pause() is True
+    for _ in range(100):
+        if q._current is None and q._pending:
+            break
+        time.sleep(0.03)
+    (back,) = list(q._pending)
+    assert back is j and back.state == "paused" and back.id != old_id and not back.cancelled
+    assert q.busy() is False and q.snapshot()["paused"] is True
+    with open(tmp_path / "queue.json") as fh:
+        assert json.load(fh)["paused"] is True
+    back.run = lambda: None
+    q.resume()
+    for _ in range(100):
+        if not q._pending:
+            break
+        time.sleep(0.03)
+    assert not q._pending and q.paused is False
+
+
+def test_pause_and_resume_endpoints(client, monkeypatch):
+    monkeypatch.setattr(webapp.queue, "pause", lambda: False)
+    assert client.post("/api/pause").status_code == 400
+    monkeypatch.setattr(webapp.queue, "pause", lambda: True)
+    assert client.post("/api/pause").status_code == 200
+    monkeypatch.setattr(webapp.queue, "resume", lambda: None)
+    assert client.post("/api/resume").status_code == 200

@@ -11,8 +11,8 @@ set up, and from YouTube otherwise.
 - Spotify tab: paste a playlist, album or song link, check what it found, and
   hit Download; no account needed. Below it, optionally, connect your account
   once to browse your own playlists as a grid or a list and hit Download.
-- CSV tab: upload a CSV instead and hit Process Playlist.
-- Queue tab: one job at a time with live progress, filters for Saved, Skipped
+- A CSV file, at the bottom of the Spotify tab: upload one and hit Download.
+- Queue tab: one job at a time with live progress, Pause and Resume, Stop, filters for Saved, Skipped
   and Failed, a separate list of failures with their errors, and a per-track
   history for finished playlists that sorts failures first. Each saved track
   carries a tag naming its source, and a track YouTube supplied after Soulseek
@@ -192,7 +192,7 @@ Spotify does not start a second copy.
 
 ## Spotify setup
 
-Optional; links and the CSV tab work without it. Create a free app at
+Optional; links and CSV files work without it. Create a free app at
 [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard), tick
 Web API, register the redirect URI exactly, and put the Client ID in the compose
 file. No client secret is needed, since the app uses Authorization Code with
@@ -283,7 +283,8 @@ slskd_config.py  slskd's settings file: API key, account, sharing
 sync.py        which playlists are kept in sync, and what was last seen
 spotify_link.py  pasted Spotify links, read from the public pages
      ^ imported by
-app.py         Flask API: auth, start/cancel/poll, source order, yt-dlp updater
+app.py         Flask API: auth, start/pause/cancel/poll, the saved queue, source
+               order, yt-dlp updater
 spotify.py     Spotify Web API client (PKCE, no client secret)
 templates/     single-page UI, no CDN, works offline on a LAN
 static/fonts/  Archivo, the UI's typeface, bundled (SIL Open Font License, OFL.txt)
@@ -346,7 +347,9 @@ replaced and why.
 | `POST` | `/api/link/download` | Queue a pasted link (`link`, `bitrate`, `format`; `sync=0` to not keep a playlist in sync) |
 | `POST` | `/api/sync/now` | Check a synced playlist now and queue a run (`source`) |
 | `POST` | `/api/sync/remove` | Stop syncing a playlist (`source`); its folder is kept |
-| `POST` | `/api/cancel` | Cancel a job by `job_id`, running or waiting |
+| `POST` | `/api/cancel` | Stop the running job, or remove a waiting one, by `job_id`; saved songs stay |
+| `POST` | `/api/pause` | Stop the running job and hold the queue, that job first in line |
+| `POST` | `/api/resume` | Carry on; the paused job re-runs, skipping songs already saved |
 | `POST` | `/api/cancel-all` | Drop every waiting job, leaving the running one |
 | `POST` | `/api/update-ytdlp` | Upgrade yt-dlp into the state volume |
 | `POST` | `/api/sources/order` | Save the source order (`order=soulseek,youtube`), naming every source once |
@@ -359,6 +362,13 @@ replaced and why.
 | `GET` | `/api/spotify/playlists` | Your playlists with artwork and counts |
 | `POST` | `/api/spotify/download` | Export a playlist to CSV and queue it, kept in sync unless `sync=0` |
 | `POST` | `/api/spotify/disconnect` | Forget the stored token |
+
+The queue is saved to `.spotify-playlists/queue.json` whenever it changes, so
+an update or restart brings back the running job (first in line) and the
+waiting ones. Progress is not saved and need not be: a re-run skips every song
+already on disk. Pause stops the running job, puts it back first and holds the
+queue, and a paused queue comes back paused, which is the way to update the
+app mid-playlist. Stop ends the running job for good; its saved songs stay.
 
 Jobs queue instead of being rejected, and run strictly one at a time, one track
 at a time. Parallel YouTube extraction is the quickest way to get rate-limited,

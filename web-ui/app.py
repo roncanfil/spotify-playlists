@@ -269,6 +269,9 @@ class Job:
         self.started_at = None
         self.finished_at = None
         self._cancel = threading.Event()
+        # Set by pause(): the job stops like a cancel but goes back to the
+        # front of the queue instead of into Recent.
+        self._pausing = False
         self._lock = threading.Lock()
 
     @property
@@ -277,6 +280,44 @@ class Job:
 
     def cancel(self):
         self._cancel.set()
+
+    def pause(self):
+        self._pausing = True
+        self._cancel.set()
+
+    def to_dict(self):
+        """What it takes to run this job again, for the saved queue."""
+        return {
+            "csv_path": self.csv_path, "bitrate": self.bitrate, "audio_format": self.audio_format,
+            "source": self.source, "name": self.name, "output_dir": self.target_dir,
+            "write_playlist": self.write_playlist, "numbered": self.numbered,
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(d["csv_path"], d["bitrate"], d.get("audio_format") or core.DEFAULT_FORMAT,
+                   source=d.get("source") or "upload", name=d.get("name"),
+                   output_dir=d.get("output_dir"), write_playlist=d.get("write_playlist", True),
+                   numbered=d.get("numbered", False))
+
+    def prepare_resume(self):
+        """
+        Reset a paused job to run again from the top: songs already on disk
+        are skipped, so it carries on where it stopped. A new id, so the page
+        treats it as a fresh run rather than appending to the old track list.
+        """
+        with self._lock:
+            self.id = uuid.uuid4().hex[:12]
+            self.state = "paused"
+            self.error = None
+            self.output_dir = None
+            self.total = self.done = self.downloaded = self.skipped = self.failed = 0
+            self.current = None
+            self.events, self.events_base = [], 0
+            self.by_source = {}
+            self.started_at = self.finished_at = None
+            self._cancel = threading.Event()
+            self._pausing = False
 
     def _add(self, kind, text, detail=None, source=None):
         with self._lock:
@@ -363,7 +404,10 @@ class Job:
         finally:
             with self._lock:
                 if self.state == "running":
-                    self.state = "cancelled" if self._cancel.is_set() else "done"
+                    if self._pausing:
+                        self.state = "paused"
+                    else:
+                        self.state = "cancelled" if self._cancel.is_set() else "done"
                 self.finished_at = time.time()
                 self.current = None
 
@@ -432,20 +476,98 @@ class JobQueue:
     once should not be able to cause that.
     """
 
-    def __init__(self):
+    def __init__(self, path=None):
         self._pending = deque()
         self._current = None
         self._recent = deque(maxlen=MAX_RECENT)
         self._lock = threading.Lock()
         self._wake = threading.Event()
+        # Paused: the running job was stopped and put back first in line, and
+        # nothing starts until resume(). Saved, like the queue itself, so a
+        # restart (an app update) comes back as it was left.
+        self.paused = False
+        self.path = path
         threading.Thread(target=self._loop, daemon=True).start()
 
     def add(self, job):
         with self._lock:
             self._pending.append(job)
             position = len(self._pending) + (1 if self._current else 0)
+        self._save()
         self._wake.set()
         return position
+
+    # ------------------------------------------------------------ saving
+
+    def _save(self):
+        """
+        Write the running and waiting jobs to disk. Only what it takes to run
+        them again: progress is not saved, because a re-run skips every song
+        already on disk and so picks up where it stopped.
+        """
+        if not self.path:
+            return
+        with self._lock:
+            cur = self._current
+            # A cancelled running job is not saved; a pausing one is.
+            jobs = [cur] if cur and (cur._pausing or not cur.cancelled) else []
+            jobs += list(self._pending)
+            data = {"paused": self.paused, "jobs": [j.to_dict() for j in jobs]}
+        try:
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, indent=2, ensure_ascii=False)
+            os.replace(tmp, self.path)
+        except OSError:
+            pass  # a queue that cannot be saved still runs
+
+    def restore(self):
+        """Load the saved queue at start; a job that was running goes first."""
+        try:
+            with open(self.path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError, TypeError):
+            return 0
+        jobs = []
+        for d in data.get("jobs") or []:
+            try:
+                if os.path.isfile(d["csv_path"]):
+                    jobs.append(Job.from_dict(d))
+            except (KeyError, TypeError):
+                continue
+        with self._lock:
+            self.paused = bool(data.get("paused")) and bool(jobs)
+            for j in jobs:
+                if self.paused:
+                    j.state = "paused"
+                self._pending.append(j)
+        self._save()
+        self._wake.set()
+        return len(jobs)
+
+    # ------------------------------------------------------------ pause
+
+    def pause(self):
+        """Stop the running job and hold the queue; it goes back first in line."""
+        with self._lock:
+            if not self._current and not self._pending:
+                return False
+            self.paused = True
+            if self._current:
+                self._current.pause()
+            for j in self._pending:
+                j.state = "paused"
+        self._save()
+        return True
+
+    def resume(self):
+        with self._lock:
+            self.paused = False
+            for j in self._pending:
+                if j.state == "paused":
+                    j.state = "queued"
+        self._save()
+        self._wake.set()
 
     def find(self, job_id):
         with self._lock:
@@ -470,8 +592,13 @@ class JobQueue:
                         j.finished_at = time.time()
                     self._pending.remove(j)
                     self._recent.appendleft(j)
-                    return "queued"
-        return None
+                    if not self._pending:
+                        self.paused = False
+                    break
+            else:
+                return None
+        self._save()
+        return "queued"
 
     def cancel_all_pending(self):
         dropped = 0
@@ -484,6 +611,9 @@ class JobQueue:
                     j.finished_at = time.time()
                 self._recent.appendleft(j)
                 dropped += 1
+            if not self._current:
+                self.paused = False
+        self._save()
         return dropped
 
     def has_csv(self, csv_path):
@@ -494,7 +624,7 @@ class JobQueue:
 
     def busy(self):
         with self._lock:
-            return self._current is not None or bool(self._pending)
+            return (self._current is not None or bool(self._pending)) and not self.paused
 
     def snapshot(self, since=None):
         """`since` is (job id, event number): the running job's events the page already has."""
@@ -504,6 +634,7 @@ class JobQueue:
             recent = list(self._recent)
         after = since[1] if since and current and since[0] == current.id else None
         return {
+            "paused": self.paused,
             "current": current.snapshot(since=after) if current else None,
             "pending": [j.snapshot(with_events=False) for j in pending],
             "recent": [j.snapshot(with_events=False) for j in recent],
@@ -515,11 +646,12 @@ class JobQueue:
             self._wake.clear()
             while True:
                 with self._lock:
-                    if not self._pending:
+                    if self.paused or not self._pending:
                         self._current = None
                         break
                     job = self._pending.popleft()
                     self._current = job
+                self._save()
                 if job.cancelled:
                     with job._lock:
                         job.state = "cancelled"
@@ -527,11 +659,16 @@ class JobQueue:
                 else:
                     job.run()
                 with self._lock:
-                    self._recent.appendleft(job)
+                    if job.state == "paused":
+                        job.prepare_resume()
+                        self._pending.appendleft(job)
+                    else:
+                        self._recent.appendleft(job)
                     self._current = None
+                self._save()
 
 
-queue = JobQueue()
+queue = JobQueue(os.path.join(STATE_DIR, "queue.json"))
 
 
 # ---------------------------------------------------------------- sources
@@ -1029,6 +1166,21 @@ def api_cancel():
     return jsonify({"ok": True, "cancelled": what})
 
 
+@app.post("/api/pause")
+@require_auth
+def api_pause():
+    if not queue.pause():
+        return jsonify({"error": "Nothing is running or waiting."}), 400
+    return jsonify({"ok": True})
+
+
+@app.post("/api/resume")
+@require_auth
+def api_resume():
+    queue.resume()
+    return jsonify({"ok": True})
+
+
 @app.post("/api/cancel-all")
 @require_auth
 def api_cancel_all():
@@ -1496,6 +1648,12 @@ def api_sync_remove():
     if not sync_store.remove(request.form.get("source", "")):
         return jsonify({"error": "That playlist is not synced."}), 404
     return jsonify({"ok": True, "sync": sync_block()})
+
+
+# The saved queue comes back once everything a job needs is defined: a job
+# that was running when the app stopped (an update, a restart) goes first and
+# skips every song it already saved; a paused queue stays paused.
+queue.restore()
 
 
 if __name__ == "__main__":

@@ -259,6 +259,10 @@ class Job:
         self.failed = 0
         self.current = None
         self.events = []
+        # Events trimmed off the front of `events` (MAX_EVENTS), so every event
+        # keeps one absolute number: the page asks only for those after the
+        # last it has.
+        self.events_base = 0
         # Saved tracks per source label, for the Recent row.
         self.by_source = {}
         self.queued_at = time.time()
@@ -281,9 +285,17 @@ class Job:
                  "t": time.time()}
             )
             if len(self.events) > MAX_EVENTS:
-                del self.events[: len(self.events) - MAX_EVENTS]
+                drop = len(self.events) - MAX_EVENTS
+                del self.events[:drop]
+                self.events_base += drop
 
-    def snapshot(self, with_events=True):
+    def snapshot(self, with_events=True, since=None):
+        """
+        The job as JSON. With events, `since` (an absolute event number) sends
+        only the events after it; "events_from" says where the list starts and
+        "events_total" how many there are, so the page can tell whether to
+        append or start over.
+        """
         with self._lock:
             base = {
                 "id": self.id,
@@ -312,7 +324,13 @@ class Job:
                 ),
             }
             if with_events:
-                base["events"] = list(self.events)
+                total = self.events_base + len(self.events)
+                start = self.events_base
+                if since is not None and self.events_base <= since <= total:
+                    start = since
+                base["events"] = self.events[start - self.events_base:]
+                base["events_from"] = start
+                base["events_total"] = total
             return base
 
     def run(self):
@@ -478,13 +496,15 @@ class JobQueue:
         with self._lock:
             return self._current is not None or bool(self._pending)
 
-    def snapshot(self):
+    def snapshot(self, since=None):
+        """`since` is (job id, event number): the running job's events the page already has."""
         with self._lock:
             current = self._current
             pending = list(self._pending)
             recent = list(self._recent)
+        after = since[1] if since and current and since[0] == current.id else None
         return {
-            "current": current.snapshot() if current else None,
+            "current": current.snapshot(since=after) if current else None,
             "pending": [j.snapshot(with_events=False) for j in pending],
             "recent": [j.snapshot(with_events=False) for j in recent],
         }
@@ -781,11 +801,35 @@ def healthz():
 @app.get("/api/state")
 @require_auth
 def api_state():
-    snap = queue.snapshot()
+    """
+    Everything the page shows, polled every 1.5 s while a job runs. The page
+    keeps the size down: ev=<job id>:<n> sends only the running job's events
+    after the n it has, and lite=1 leaves out the settings that cannot change
+    while the app runs, which it fetched once on load.
+    """
+    since = None
+    job_id, _, n = request.args.get("ev", "").partition(":")
+    if job_id and n.isdigit():
+        since = (job_id, int(n))
+    snap = queue.snapshot(since=since)
     snap.update(
         {
             "playlists": list_playlists(),
             "ytdlp": ytdlp_version(),
+            "spotify": {
+                "configured": spotify.configured,
+                "connected": spotify.connected,
+                "redirect_uri": SPOTIFY_REDIRECT_URI,
+            },
+            "sources": sources_block(),
+            "setup": {"onboarded": load_settings()["onboarded"]},
+            "sync": sync_block(),
+        }
+    )
+    if request.args.get("lite") == "1":
+        return jsonify(snap)
+    snap.update(
+        {
             "music_dir": MUSIC_DIR,
             "startup_warnings": STARTUP_WARNINGS,
             "bitrates": list(core.SUPPORTED_BITRATES),
@@ -798,14 +842,6 @@ def api_state():
             "formats": list(core.SUPPORTED_FORMATS),
             "default_format": core.DEFAULT_FORMAT,
             "format_notes": dict(core.FORMAT_NOTES),
-            "spotify": {
-                "configured": spotify.configured,
-                "connected": spotify.connected,
-                "redirect_uri": SPOTIFY_REDIRECT_URI,
-            },
-            "sources": sources_block(),
-            "setup": {"onboarded": load_settings()["onboarded"]},
-            "sync": sync_block(),
         }
     )
     return jsonify(snap)

@@ -530,3 +530,39 @@ def test_stop_syncing(client, synced):
     assert client.post("/api/sync/remove", data={"source": SRC}).status_code == 200
     assert webapp.sync_store.all() == []
     assert client.post("/api/sync/now", data={"source": SRC}).status_code == 404
+
+
+# ---------------------------------------------------------------- polling size
+
+
+def test_a_job_sends_only_the_events_after_the_ones_the_page_has():
+    j = webapp.Job("/x/mix.csv", 192)
+    for i in range(5):
+        j._add("ok", f"song {i}")
+    full = j.snapshot()
+    assert (len(full["events"]), full["events_from"], full["events_total"]) == (5, 0, 5)
+    part = j.snapshot(since=3)
+    assert [e["text"] for e in part["events"]] == ["song 3", "song 4"] and part["events_from"] == 3
+    assert j.snapshot(since=5)["events"] == []
+    # A number the job cannot honour gets the whole list.
+    assert j.snapshot(since=99)["events_from"] == 0
+
+
+def test_trimmed_events_keep_their_numbers(monkeypatch):
+    monkeypatch.setattr(webapp, "MAX_EVENTS", 3)
+    j = webapp.Job("/x/mix.csv", 192)
+    for i in range(5):
+        j._add("ok", f"song {i}")
+    s = j.snapshot(since=4)
+    assert ([e["text"] for e in s["events"]], s["events_from"], s["events_total"]) == (["song 4"], 4, 5)
+    # Asking from before the trim point restarts at the oldest kept event.
+    assert j.snapshot(since=1)["events_from"] == 2
+
+
+def test_lite_state_leaves_out_the_settings_that_never_change(client):
+    full = state(client)
+    lite = client.get("/api/state?lite=1").get_json()
+    for key in ("bitrate_notes", "format_notes", "formats", "app_version", "startup_warnings"):
+        assert key in full and key not in lite
+    for key in ("sources", "sync", "spotify", "setup", "current", "pending", "recent", "playlists"):
+        assert key in lite

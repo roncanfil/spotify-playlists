@@ -1833,18 +1833,43 @@ $('btn-update').addEventListener('click', async () => {
 
 /* ------------------------------------------------------------ poll */
 let lastData = { pending: [], recent: [] };
+// The settings that cannot change while the app runs come with the first
+// poll only (later ones ask with lite=1), and the running job's track events
+// arrive as additions to the ones already here (ev=<job>:<count>), so a long
+// playlist does not resend its whole history every second and a half.
+let gotStatic = false;
+let evCache = { id: null, list: [], total: 0 };
+
+function mergeEvents(j) {
+  if (!j) { evCache = { id: null, list: [], total: 0 }; return; }
+  const fresh = j.events || [];
+  const list = evCache.id === j.id && j.events_from === evCache.total
+    ? evCache.list.concat(fresh) : fresh;
+  evCache = { id: j.id, list: list.slice(-2000), total: j.events_total ?? list.length };
+  j.events = evCache.list;
+}
 
 async function refresh() {
   let d;
   try {
-    const r = await fetch('/api/state');
+    const q = new URLSearchParams();
+    if (gotStatic) q.set('lite', '1');
+    if (evCache.id) q.set('ev', `${evCache.id}:${evCache.total}`);
+    const r = await fetch('/api/state' + (q.toString() ? '?' + q : ''));
     d = await r.json();
     if (r.status === 401 && d.login) { location.href = '/login'; return false; }
   } catch (e) { return false; }
+  mergeEvents(d.current);
+  if (!gotStatic && 'app_version' in d) {
+    gotStatic = true;
+    $('signout').hidden = !d.auth_enabled;
+    $('appver').textContent = d.app_version || 'dev';
+    const warns = d.startup_warnings || [];
+    $('warnbar').hidden = !warns.length;
+    if (warns.length) $('warnlist').innerHTML = warns.map(w => `<li>${esc(w)}</li>`).join('');
+  }
   lastData = d;
-  $('signout').hidden = !d.auth_enabled;
   $('ytdlp').textContent = d.ytdlp || '…';
-  $('appver').textContent = d.app_version || 'dev';
   renderSources(d.sources);
   renderSync(d.sync);
   if (d.setup && !d.setup.onboarded && !obShown) { obShown = true; openOnboard('choose', 'setup'); }
@@ -1852,10 +1877,6 @@ async function refresh() {
   if (d.bitrate_notes && !Object.keys(NOTES).length) {
     NOTES = d.bitrate_notes; FMT_NOTES = d.format_notes || {}; renderOutput();
   }
-
-  const warns = d.startup_warnings || [];
-  $('warnbar').hidden = !warns.length;
-  if (warns.length) $('warnlist').innerHTML = warns.map(w => `<li>${esc(w)}</li>`).join('');
 
   const sp = d.spotify || {};
   $('sp-redirect').textContent = sp.redirect_uri || '';

@@ -16,7 +16,9 @@ set up, and from YouTube otherwise.
   and Failed, a separate list of failures with their errors, and a per-track
   history for finished playlists that sorts failures first. Each saved track
   carries a tag naming its source, and a track YouTube supplied after Soulseek
-  missed says why Soulseek missed.
+  missed says why Soulseek missed. A failed song has Retry, and a song from
+  YouTube has Try Soulseek: both open the search words to edit (add a remix
+  name, fix a spelling) and queue that one song again.
 - Settings tab: output format, the audio sources (each Connected, Not set up,
   Not installed or Error, in the order they are tried, which you can change),
   the Soulseek account and sharing, and the yt-dlp updater.
@@ -350,6 +352,7 @@ replaced and why.
 | `POST` | `/api/cancel` | Stop the running job, or remove a waiting one, by `job_id`; saved songs stay |
 | `POST` | `/api/pause` | Stop the running job and hold the queue, that job first in line |
 | `POST` | `/api/resume` | Carry on; the paused job re-runs, skipping songs already saved |
+| `POST` | `/api/retry` | `job_id`, `song`, `search`: queue one song of a listed job again with those search words |
 | `POST` | `/api/cancel-all` | Drop every waiting job, leaving the running one |
 | `POST` | `/api/update-ytdlp` | Upgrade yt-dlp into the state volume |
 | `POST` | `/api/sources/order` | Save the source order (`order=soulseek,youtube`), naming every source once |
@@ -369,6 +372,18 @@ waiting ones. Progress is not saved and need not be: a re-run skips every song
 already on disk. Pause stops the running job, puts it back first and holds the
 queue, and a paused queue comes back paused, which is the way to update the
 app mid-playlist. Stop ends the running job for good; its saved songs stay.
+
+A retry is a job for one song of the same list, in the same folder, with the
+words typed instead of the usual search. A failed song tries every source. A
+song from YouTube tries the others only, downloads beside the old file and
+replaces it only once the new one is in hand, so a miss keeps what you had.
+The file keeps the Spotify name and tags whatever was searched, and the
+playlist's `.m3u` is written whole again.
+
+The usual Soulseek search leaves out "(feat. X)", "Remastered" and the like,
+which file names often skip. When the dropped part names another version (a
+remix, a live take, an edit), it searches with those words first: without them
+the search finds mostly the original, which the length check turns down.
 
 Jobs queue instead of being rejected, and run strictly one at a time, one track
 at a time. Parallel YouTube extraction is the quickest way to get rate-limited,

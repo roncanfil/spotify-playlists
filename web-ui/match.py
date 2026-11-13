@@ -128,23 +128,47 @@ def main_artist(s):
     return a.strip()
 
 
+# "(feat. X)", "[with X]": guests, which file names often leave out.
+FEAT_PART = re.compile(r"\s*[(\[](?:feat|ft|with)\b[^)\]]*[)\]]", re.IGNORECASE)
+
+
+def search_title(s):
+    """
+    The title worth searching for: base_title, unless the part it drops names
+    another version (" - Sofi Tukker Remix", " (Live at Wembley)"). Then that
+    part is what sets the recording apart, and a search without it turns up
+    mostly the original, which the length check rightly turns down. Guests are
+    still left out.
+    """
+    b = base_title(s)
+    rest = norm(s[len(b):]) if s.startswith(b) else ""
+    if not any(has_words(rest, w) for w in VERSION_WORDS):
+        return b
+    return FEAT_PART.sub("", s).strip() or b
+
+
+def search_text(t):
+    """The first search, as a person would type it: "Lady Gaga 911 - Sofi Tukker Remix"."""
+    return f"{main_artist(t.artist)} {search_title(t.title)}".strip()
+
+
 def queries(t):
     """
     The search words: the main artist and the base title. Soulseek finds files
-    whose path has every word, so fewer, surer words find more.
+    whose path has every word, so fewer, surer words find more. A remix, live
+    take or other version is searched with its version words first.
     """
     title = norm(base_title(t.title))
     artist = norm(main_artist(t.artist))
-    q = [f"{artist} {title}".strip()]
+    q = [norm(search_text(t)), f"{artist} {title}".strip()]
     # Without the artist: for files named only by title, in folders named
     # another way. Length in UTF-8 bytes, as Rust's str::len counts it.
     distinctive = len(title.split(" ")) >= 2 or len(title.encode("utf-8")) >= 7
     if distinctive and artist:
         q.append(title)
-    q = [s for s in q if s]
     out = []
     for s in q:
-        if not out or out[-1] != s:
+        if s and s not in out:
             out.append(s)
     return out
 

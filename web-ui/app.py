@@ -236,7 +236,7 @@ class Job:
 
     def __init__(self, csv_path, bitrate, audio_format=core.DEFAULT_FORMAT,
                  source="upload", name=None, output_dir=None, write_playlist=True,
-                 numbered=False):
+                 numbered=False, retry=None, skip_sources=None):
         self.id = uuid.uuid4().hex[:12]
         self.csv_path = csv_path
         self.name = name or os.path.splitext(os.path.basename(csv_path))[0]
@@ -246,6 +246,10 @@ class Job:
         self.write_playlist = write_playlist
         # Track numbers in file names: albums only. See process_playlist.
         self.numbered = numbered
+        # A retry runs only these songs ("Artist - Title" -> words to search),
+        # leaving out the sources named in skip_sources.
+        self.retry = retry
+        self.skip_sources = list(skip_sources or [])
         self.bitrate = bitrate
         self.audio_format = audio_format
         self.source = source
@@ -291,6 +295,7 @@ class Job:
             "csv_path": self.csv_path, "bitrate": self.bitrate, "audio_format": self.audio_format,
             "source": self.source, "name": self.name, "output_dir": self.target_dir,
             "write_playlist": self.write_playlist, "numbered": self.numbered,
+            "retry": self.retry, "skip_sources": self.skip_sources,
         }
 
     @classmethod
@@ -298,7 +303,8 @@ class Job:
         return cls(d["csv_path"], d["bitrate"], d.get("audio_format") or core.DEFAULT_FORMAT,
                    source=d.get("source") or "upload", name=d.get("name"),
                    output_dir=d.get("output_dir"), write_playlist=d.get("write_playlist", True),
-                   numbered=d.get("numbered", False))
+                   numbered=d.get("numbered", False), retry=d.get("retry"),
+                   skip_sources=d.get("skip_sources"))
 
     def prepare_resume(self):
         """
@@ -319,12 +325,14 @@ class Job:
             self._cancel = threading.Event()
             self._pausing = False
 
-    def _add(self, kind, text, detail=None, source=None):
+    def _add(self, kind, text, detail=None, source=None, search=None):
         with self._lock:
-            self.events.append(
-                {"kind": kind, "text": text, "detail": detail, "source": source,
-                 "t": time.time()}
-            )
+            ev = {"kind": kind, "text": text, "detail": detail, "source": source,
+                  "t": time.time()}
+            if search:
+                # The words searched, for the Retry box to start from.
+                ev["search"] = search
+            self.events.append(ev)
             if len(self.events) > MAX_EVENTS:
                 drop = len(self.events) - MAX_EVENTS
                 del self.events[:drop]
@@ -387,10 +395,11 @@ class Job:
                 should_cancel=self._cancel.is_set,
                 # Read when the job starts, so a change in Settings applies to
                 # the next job rather than reshuffling one mid-run.
-                sources=ordered_sources(),
+                sources=[s for s in ordered_sources() if s.name not in self.skip_sources],
                 output_dir=self.target_dir,
                 write_playlist=self.write_playlist,
                 numbered=self.numbered,
+                retry=self.retry,
             ):
                 self._handle(ev)
             if self.downloaded:
@@ -450,13 +459,13 @@ class Job:
             # track Soulseek could not find says so rather than passing silently.
             for a in ev.get("attempts") or []:
                 detail += f" - {a['label']} missed: {a['error']}"
-            self._add("ok", ev["query"], detail, source=label)
+            self._add("ok", ev["query"], detail, source=label, search=ev.get("search"))
         elif kind == "track_error":
             with self._lock:
                 self.failed += 1
                 self.done += 1
                 self.current = None
-            self._add("fail", ev["query"], ev["error"])
+            self._add("fail", ev["query"], ev["error"], search=ev.get("search"))
         elif kind == "cancelled":
             self._add("warn", "Cancelled")
         elif kind == "summary":
@@ -617,10 +626,10 @@ class JobQueue:
         return dropped
 
     def has_csv(self, csv_path):
-        """Whether a job for this CSV is waiting or running."""
+        """Whether a job for this CSV is waiting or running (a one-song retry aside)."""
         with self._lock:
             jobs = list(self._pending) + ([self._current] if self._current else [])
-        return any(j.csv_path == csv_path and not j.cancelled for j in jobs)
+        return any(j.csv_path == csv_path and not j.cancelled and j.retry is None for j in jobs)
 
     def busy(self):
         with self._lock:
@@ -1152,6 +1161,40 @@ def api_start():
     job = Job(csv_path, bitrate, audio_format, source=source, name=name, numbered=album)
     position = queue.add(job)
     return jsonify({"job": job.snapshot(with_events=False), "position": position})
+
+
+@app.post("/api/retry")
+@require_auth
+def api_retry():
+    """
+    One song of a listed job again, with the words the user typed. A song
+    that failed tries every source; one saved from YouTube tries the others
+    only, and keeps its file unless one of them finds a better one.
+    """
+    job = queue.find(request.form.get("job_id", ""))
+    song = request.form.get("song", "")
+    search = " ".join(request.form.get("search", "").split())[:200]
+    if not job:
+        return jsonify({"error": "That job is no longer listed. Download the playlist again."}), 404
+    with job._lock:
+        ev = next((e for e in reversed(job.events)
+                   if e["text"] == song and e["kind"] in ("ok", "fail")), None)
+    if not ev:
+        return jsonify({"error": "That song is not in this job."}), 404
+    skip = []
+    if ev["kind"] == "ok":
+        if ev.get("source") != "YouTube":
+            return jsonify({"error": "Only failed songs and songs from YouTube can be retried."}), 400
+        skip = ["youtube"]
+        if not slsk_settings.read()["username"]:
+            return jsonify({"error": "Set up Soulseek in Settings first: this song already came from YouTube."}), 400
+    if not os.path.isfile(job.csv_path):
+        return jsonify({"error": "The list this song came from is gone. Download it again."}), 404
+    retry = Job(job.csv_path, job.bitrate, job.audio_format, source="retry", name=song,
+                output_dir=job.target_dir, write_playlist=job.write_playlist,
+                numbered=job.numbered, retry={song: search}, skip_sources=skip)
+    position = queue.add(retry)
+    return jsonify({"job": retry.snapshot(with_events=False), "position": position})
 
 
 @app.post("/api/cancel")

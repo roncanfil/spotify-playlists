@@ -62,6 +62,8 @@ class Request:
     bitrate: int
     audio_format: str
     should_cancel: Optional[Callable[[], bool]] = None
+    # Words typed by the user on a retry, searched instead of the usual ones.
+    search: Optional[str] = None
 
     @property
     def target_path(self):
@@ -341,7 +343,8 @@ class P2PSource:
     def _search(self, req, ranker):
         """Run queries until one finds a good candidate. Returns (queries, dropped)."""
         searched, dropped = [], 0
-        for q in match.queries(req.track):
+        typed = match.norm(req.search or "")
+        for q in [typed] if typed else match.queries(req.track):
             if req.cancelled():
                 raise Cancelled()
             for resp in self.client.search(q, req.should_cancel):

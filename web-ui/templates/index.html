@@ -467,6 +467,18 @@
   .tl .err { color:var(--fail); font-size:13px; margin-top:2px; }
   .tl .det { color:var(--muted); font-size:12.5px; margin-top:2px; }
   .tl .empty { padding:26px 12px; }
+  .tl .redo { margin-top:6px; height:26px; padding:0 9px; font-size:11.5px; }
+  .tl tr.redo-row td { padding-top:0; background:var(--surface-2); }
+  .tl tbody tr:has(+ .redo-row) td { background:var(--surface-2); border-bottom:0; }
+  .retry { padding:12px; border:2px solid var(--line-2); background:var(--surface-2); }
+  .retry label { display:block; font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--muted); margin-bottom:6px; }
+  .retry .line { display:flex; gap:8px; flex-wrap:wrap; }
+  .retry input { flex:1 1 220px; min-width:0; height:38px; padding:0 10px; border:2px solid var(--line-2); border-radius:0;
+    background:var(--surface); color:var(--ink); font:inherit; font-size:14px; font-weight:550; }
+  .retry input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
+  .retry .btn { height:38px; }
+  .retry p { margin:8px 0 0; font-size:12.5px; color:var(--muted); }
   .st { display:inline-flex; align-items:center; gap:6px; font-weight:800; font-size:12px; letter-spacing:.04em;
     text-transform:uppercase; white-space:nowrap; }
   .st::before { content:""; width:9px; height:9px; background:currentColor; flex:none; }
@@ -1321,8 +1333,14 @@ const KIND_NAME = { ok: 'Saved', skip: 'Skipped', fail: 'Failed' };
 const KIND_RANK = { fail: 0, ok: 1, skip: 2 };
 const isTrack = e => KINDS.includes(e.kind);
 
-function TrackList(host, { sort }) {
+let trackLists = 0;
+function TrackList(host, { sort, jobId }) {
   this.host = host;
+  this.uid = ++trackLists;
+  this.jobId = jobId;
+  // The song whose Retry box is open, with what has been typed so far: the
+  // body is rebuilt as songs stream in, and the box is rebuilt with it.
+  this.editing = null;
   this.filter = 'all';
   this.sort = sort;
   this.events = [];
@@ -1351,7 +1369,49 @@ function TrackList(host, { sort }) {
     this.sort = { by, desc: this.sort.by === by ? !this.sort.desc : by === 'order' };
     this.render(true);
   }));
+  this.tbody.addEventListener('click', e => {
+    const open = e.target.closest('[data-retry]');
+    if (open) {
+      const ev = this.events.find(x => x.text === open.dataset.retry && x.kind !== 'skip');
+      this.editing = { song: open.dataset.retry, value: (ev && ev.search) || open.dataset.retry, focus: true };
+      this.render(false);
+      return;
+    }
+    if (e.target.closest('[data-retry-x]')) { this.editing = null; this.render(false); }
+  });
+  this.tbody.addEventListener('input', e => {
+    if (e.target.name === 'search' && this.editing) this.editing.value = e.target.value;
+  });
+  this.tbody.addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = e.target, btn = f.querySelector('[type=submit]');
+    const search = f.search.value.trim();
+    if (!search) { f.search.focus(); return; }
+    btn.disabled = true;
+    try {
+      await api('/api/retry', { job_id: this.jobId, song: f.dataset.song, search });
+      flash(`Added “${f.dataset.song}” to the queue, searching for “${search}”.`, true);
+      this.editing = null; this.render(false);
+      poll();
+    } catch (err) { flash(err.message, false); btn.disabled = false; }
+  });
 }
+// Failed songs, and songs YouTube supplied, can be searched for again.
+const canRetry = e => e.kind === 'fail' || (e.kind === 'ok' && e.source === 'YouTube');
+TrackList.prototype.isEditing = function (e) {
+  return !!(this.jobId && this.editing && this.editing.song === e.text && canRetry(e));
+};
+TrackList.prototype.retryBox = function (e) {
+  const yt = e.kind === 'ok';
+  return `<form class="retry" data-song="${esc(e.text)}">
+      <label for="rs-${this.uid}">Search for</label>
+      <div class="line"><input id="rs-${this.uid}" name="search" value="${esc(this.editing.value)}" autocomplete="off" spellcheck="false">
+        <button class="btn sm primary" type="submit">Search again</button>
+        <button class="btn sm ghost" type="button" data-retry-x>Cancel</button></div>
+      <p>${yt ? 'Only Soulseek is searched. The YouTube copy stays unless Soulseek has the song.'
+              : 'Add what the search left out, like a remix name. The file keeps the Spotify name and tags.'}</p>
+    </form>`;
+};
 TrackList.prototype.update = function (events) { this.events = events || []; this.render(false); };
 TrackList.prototype.render = function (reset) {
   const tracks = this.events.filter(isTrack);
@@ -1367,7 +1427,7 @@ TrackList.prototype.render = function (reset) {
     else th.removeAttribute('aria-sort');
   });
 
-  const sig = [this.events.length, this.filter, this.sort.by, this.sort.desc].join('|');
+  const sig = [this.events.length, this.filter, this.sort.by, this.sort.desc, this.editing && this.editing.song].join('|');
   if (sig === this.sig && !reset) return;
   this.sig = sig;
 
@@ -1382,14 +1442,20 @@ TrackList.prototype.render = function (reset) {
   else
     rows.sort((a, b) => (a.i - b.i) * dir);
 
+  this.hadFocus = !!(document.activeElement && document.activeElement.closest && document.activeElement.closest('.retry') && this.tbody.contains(document.activeElement));
   const sc = this.scroll, prevTop = sc.scrollTop, prevH = sc.scrollHeight;
   this.tbody.innerHTML = rows.length ? rows.map(e => `<tr>
       <td class="c-status"><span class="st ${e.kind}">${KIND_NAME[e.kind]}</span></td>
-      <td>${esc(e.text)}${e.source ? `<span class="pill src ${esc(e.source.toLowerCase())}">${esc(e.source)}</span>` : ''}${e.detail ? `<div class="${e.kind === 'fail' ? 'err' : 'det'}">${esc(e.detail)}</div>` : ''}</td>
+      <td>${esc(e.text)}${e.source ? `<span class="pill src ${esc(e.source.toLowerCase())}">${esc(e.source)}</span>` : ''}${e.detail ? `<div class="${e.kind === 'fail' ? 'err' : 'det'}">${esc(e.detail)}</div>` : ''}${
+        !this.jobId || !canRetry(e) || this.isEditing(e) ? ''
+          : `<button class="btn sm redo" type="button" data-retry="${esc(e.text)}">${e.kind === 'ok' ? 'Try Soulseek' : 'Retry'}</button>`}</td>
       <td class="c-order">${e.i + 1}</td>
-    </tr>`).join('')
+    </tr>${this.isEditing(e) ? `<tr class="redo-row"><td colspan="3">${this.retryBox(e)}</td></tr>` : ''}`).join('')
     : `<tr><td colspan="3"><div class="empty">${this.filter === 'all' ? 'No tracks yet.' : 'Nothing in this filter.'}</div></td></tr>`;
 
+  const box = this.tbody.querySelector('.retry input');
+  if (box && (this.editing.focus || this.hadFocus)) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+  if (this.editing) this.editing.focus = false;
   if (reset) { sc.scrollTop = 0; return; }
   // Rows arriving at the top would push the reader's row down; compensate so
   // what they are looking at stays put. At the very top, new rows just appear.
@@ -1435,7 +1501,7 @@ function renderCurrent(j) {
         bar: host.querySelector('.track i'), pct: host.querySelector('.pct'), now: host.querySelector('.now'),
         tk: host.querySelector('.tk'), stats: {},
       },
-      list: new TrackList(host.querySelector('.tracks'), { sort: { by: 'order', desc: true } }),
+      list: new TrackList(host.querySelector('.tracks'), { sort: { by: 'order', desc: true }, jobId: j.id }),
     };
     host.querySelectorAll('.stat').forEach(s => { cur.els.stats[s.querySelector('.v').dataset.k] = s; });
     cur.els.cancel.addEventListener('click', () => cancelJob(j, true));
@@ -1521,7 +1587,7 @@ function renderBand(d) {
     word = j.name;
     fill = j.total ? j.done / j.total : 0;
     count = `${j.done}/${j.total}`;
-    cat.push(['live', sync ? 'Syncing' : 'Downloading'], ['fmt', j.format]);
+    cat.push(['live', sync ? 'Syncing' : j.source === 'retry' ? 'Retrying' : 'Downloading'], ['fmt', j.format]);
     if (j.failed) cat.push(['', `${j.failed} failed`]);
     if (waiting) cat.push(['', `${waiting} waiting`]);
     if (j.current) cat.push(['trk', j.current]);
@@ -1647,7 +1713,7 @@ function paintDetail(id) {
   if (!st.list) {
     host.innerHTML = '';
     // Failures first: that is what people open a finished job to look at.
-    st.list = new TrackList(host, { sort: st.sort || { by: 'status', desc: false } });
+    st.list = new TrackList(host, { sort: st.sort || { by: 'status', desc: false }, jobId: id });
     if (st.filter) st.list.filter = st.filter;
   }
   st.list.update(st.events);

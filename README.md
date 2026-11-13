@@ -64,7 +64,8 @@ the Spotify redirect URI.
   queue is saved, so you can update the app while paused and carry on after), filters for Saved, Skipped
   and Failed, a separate list of failures with their errors, and a per-track
   history for finished playlists that sorts failures first. Each saved track
-  shows which source it came from.
+  shows which source it came from. Retry a failed song, or Try Soulseek on one
+  from YouTube, with search words you can edit.
 - Settings tab: MP3 up to 128, 192 or 320 kbps (a maximum: nothing is padded
   above its source's quality), or M4A stream copy; the audio sources with their
   status and order; the Soulseek account and sharing; and the yt-dlp updater.

@@ -640,3 +640,40 @@ def test_pause_and_resume_endpoints(client, monkeypatch):
     assert client.post("/api/pause").status_code == 200
     monkeypatch.setattr(webapp.queue, "resume", lambda: None)
     assert client.post("/api/resume").status_code == 200
+
+
+# ---------------------------------------------------------------- retry
+
+
+def test_retry_queues_one_song_with_the_typed_words(client, monkeypatch):
+    monkeypatch.setattr(webapp.queue, "paused", True)  # keep the worker idle
+    job = webapp.Job(make_csv("Retry mix"), 320, source="sync", name="Retry mix")
+    job._add("ok", "Lady Gaga - 911", "opus, encoded", source="YouTube", search="Lady Gaga 911")
+    job._add("ok", "Enya - Orinoco Flow", "peer x", source="Soulseek")
+    job._add("fail", "ABBA - SOS", "no file matched", search="ABBA SOS")
+    webapp.queue._recent.appendleft(job)
+    try:
+        post = lambda song, search="words": client.post(
+            "/api/retry", data={"job_id": job.id, "song": song, "search": search})
+        # A YouTube song needs Soulseek to try instead.
+        assert post("Lady Gaga - 911").status_code == 400
+        webapp.slsk_settings.update(username="someone", password="pw")
+        r = post("Lady Gaga - 911", "  lady gaga   911 sofi tukker ")
+        assert r.status_code == 200
+        retry = webapp.queue._pending[-1]
+        assert retry.retry == {"Lady Gaga - 911": "lady gaga 911 sofi tukker"}
+        assert retry.skip_sources == ["youtube"] and retry.source == "retry"
+        assert retry.target_dir == job.target_dir and retry.name == "Lady Gaga - 911"
+        # The saved queue keeps what the retry is for.
+        again = webapp.Job.from_dict(retry.to_dict())
+        assert again.retry == retry.retry and again.skip_sources == ["youtube"]
+        # A retry does not hold up the playlist's own sync.
+        assert not webapp.queue.has_csv(job.csv_path)
+        assert post("ABBA - SOS").status_code == 200
+        assert webapp.queue._pending[-1].skip_sources == []
+        assert post("Enya - Orinoco Flow").status_code == 400
+        assert post("Nobody - Nothing").status_code == 404
+        assert client.post("/api/retry", data={"job_id": "nope", "song": "x"}).status_code == 404
+    finally:
+        webapp.queue._pending.clear()
+        webapp.queue._recent.remove(job)

@@ -384,3 +384,64 @@ def test_a_numbered_file_from_before_is_renamed_not_downloaded(playlist, tmp_pat
     assert FakeYDL.searches == [] and len(of(events, "skip")) == 1
     assert (out / "Enya - Orinoco Flow.mp3").read_bytes() == b"old"
     assert (out / "Enya - 02 - Orinoco Flow (Live).mp3").exists()
+
+
+# ---------------------------------------------------------------- retry
+
+
+def two_songs(tmp_path):
+    return write_csv(tmp_path / "mix.csv", [
+        ["Orinoco Flow", "Enya", "Watermark", "1988-09-19", "2", "30000"],
+        ["911 - Sofi Tukker Remix", "Lady Gaga, SOFI TUKKER", "", "", "", "30000"],
+    ])
+
+
+def retry_run(csv_path, tmp_path, sources, retry):
+    return list(core.process_playlist(
+        csv_path, 192, "mp3", output_root=str(tmp_path / "music"), sources=sources,
+        numbered=False, retry=retry,
+    ))
+
+
+@needs_ffmpeg
+def test_a_retry_runs_one_song_with_the_typed_words_and_replaces_it(tmp_path, audio):
+    csv_path = two_songs(tmp_path)
+    folder = tmp_path / "music" / "mix"
+    folder.mkdir(parents=True)
+    (folder / "Enya - Orinoco Flow.mp3").write_bytes(b"kept")
+    old = folder / "Lady Gaga, SOFI TUKKER - 911 - Sofi Tukker Remix.mp3"
+    old.write_bytes(b"from youtube")
+    slsk = Deliver("soulseek", "Soulseek", audio["mp3_192"])
+    song = "Lady Gaga, SOFI TUKKER - 911 - Sofi Tukker Remix"
+    events = retry_run(csv_path, tmp_path, [slsk], {song: "lady gaga 911 sofi tukker"})
+    assert [c.search for c in slsk.calls] == ["lady gaga 911 sofi tukker"]
+    (done,) = of(events, "track_done")
+    assert done["search"] == "lady gaga 911 sofi tukker"
+    assert of(events, "init")[0]["total"] == 1 and not of(events, "skip")
+    assert old.read_bytes() != b"from youtube"
+    assert sorted(os.listdir(folder)) == ["Enya - Orinoco Flow.mp3", old.name, "mix.m3u"]
+    with open(folder / "mix.m3u", encoding="utf-8") as fh:
+        m3u = fh.read()
+    assert "Enya - Orinoco Flow.mp3" in m3u and old.name in m3u
+
+
+def test_a_retry_that_finds_nothing_keeps_the_old_file(tmp_path):
+    csv_path = two_songs(tmp_path)
+    folder = tmp_path / "music" / "mix"
+    folder.mkdir(parents=True)
+    old = folder / "Lady Gaga, SOFI TUKKER - 911 - Sofi Tukker Remix.mp3"
+    old.write_bytes(b"from youtube")
+    slsk = Fail("soulseek", "Soulseek", "no file matched")
+    events = retry_run(csv_path, tmp_path, [slsk], {"Lady Gaga, SOFI TUKKER - 911 - Sofi Tukker Remix": ""})
+    # Nothing typed: the usual words, which now keep the remix name.
+    assert slsk.calls[0].search is None
+    (err,) = of(events, "track_error")
+    assert err["search"] == "Lady Gaga 911 - Sofi Tukker Remix"
+    assert old.read_bytes() == b"from youtube"
+    assert not [n for n in os.listdir(folder) if ".retry" in n]
+
+
+def test_a_retry_of_a_song_no_longer_listed_says_so(tmp_path):
+    events = retry_run(two_songs(tmp_path), tmp_path, [Fail("soulseek", "Soulseek", "x")], {"Gone - Song": ""})
+    assert any("Gone - Song is no longer in this list" in w["message"] for w in of(events, "warning"))
+    assert of(events, "summary")[0]["total"] == 0

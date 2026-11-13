@@ -597,6 +597,13 @@ def _adopt_numbered(output_dir, existing, artist, title, basename, ext):
     return False
 
 
+def _remove_quietly(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def normalize_audio_format(audio_format):
     """Coerce an output format to one we support; raises ValueError otherwise."""
     value = str(audio_format or DEFAULT_FORMAT).strip().lower()
@@ -813,7 +820,7 @@ class YouTubeSource:
         presentation, and process_playlist writes the tags.
         """
         output_dir, basename = req.output_dir, req.basename
-        query, bitrate, audio_format = req.query, req.bitrate, req.audio_format
+        query, bitrate, audio_format = req.search or req.query, req.bitrate, req.audio_format
         # One extract_info(download=True) does the search, the download, and
         # hands back the watch URL plus the chosen format -- the old code
         # searched once to tag the URL and again to download, doubling
@@ -1030,6 +1037,7 @@ def process_playlist(
     output_dir=None,
     write_playlist=True,
     numbered=True,
+    retry=None,
 ):
     """
     Run one playlist, yielding progress events.
@@ -1054,6 +1062,12 @@ def process_playlist(
     are added, removed or reordered, which used to re-download everything. A
     file from before, "Artist - 07 - Title", is renamed rather than fetched
     again. The track-number tag is still written either way.
+
+    `retry` runs only some songs again: a dict from "Artist - Title" (the
+    query events carry) to the words to search for, or "" for the usual ones.
+    A song already on disk is replaced only once a new file is in hand, so a
+    retry that finds nothing keeps what was there. The other songs on disk
+    still go in the .m3u, which is written whole as always.
     """
     bitrate = normalize_bitrate(bitrate)
     audio_format = normalize_audio_format(audio_format)
@@ -1064,8 +1078,15 @@ def process_playlist(
     os.makedirs(output_dir, exist_ok=True)
     ext = audio_format
 
-    total_songs = len(rows)
-    playlist_len = max(total_songs, 1)
+    playlist_len = max(len(rows), 1)
+    if retry is not None:
+        total_songs = sum(
+            1 for r in rows
+            if f"{cell_str(r, cols['artist'])} - {cell_str(r, cols['track'])}" in retry
+        )
+    else:
+        total_songs = len(rows)
+    retried = set()
 
     yield {
         "type": "init",
@@ -1145,8 +1166,20 @@ def process_playlist(
 
         query = f"{artist} - {track_title}"
         duration = parse_duration_ms(cell_str(row, cols["duration"]))
+        track = match.Track(artist=artist, title=track_title, duration=duration)
 
-        if song_exists(output_dir, basename, ext):
+        typed, replacing = None, False
+        if retry is not None:
+            if query not in retry:
+                if song_exists(output_dir, basename, ext):
+                    m3u_entries.append((f"{basename}.{ext}", artist, track_title))
+                continue
+            retried.add(query)
+            typed = (retry[query] or "").strip() or None
+            replacing = song_exists(output_dir, basename, ext)
+        search = typed or match.search_text(track)
+
+        if not replacing and song_exists(output_dir, basename, ext):
             skipped += 1
             # Already on disk from an earlier run -- still belongs in the .m3u.
             m3u_entries.append((f"{basename}.{ext}", artist, track_title))
@@ -1165,14 +1198,17 @@ def process_playlist(
             "album": album,
             "basename": basename,
         }
+        # A replacement downloads beside the old file and takes its place
+        # only when it is ready.
         req = Request(
-            track=match.Track(artist=artist, title=track_title, duration=duration),
+            track=track,
             query=query,
             output_dir=output_dir,
-            basename=basename,
+            basename=f"{basename}.retry" if replacing else basename,
             bitrate=bitrate,
             audio_format=audio_format,
             should_cancel=should_cancel,
+            search=typed,
         )
         result, used, attempts, cancelled = None, None, [], False
         for source in active:
@@ -1188,6 +1224,8 @@ def process_playlist(
                     {"source": source.name, "label": source.label, "error": str(e)}
                 )
         if cancelled:
+            if replacing:
+                _remove_quietly(req.target_path)
             yield {"type": "cancelled", "at": playlist_index}
             break
 
@@ -1205,6 +1243,10 @@ def process_playlist(
                 result["path"], track_title, artist, album, album_artist,
                 track_tag, meta_date, genre, comment,
             )
+            if replacing:
+                final = os.path.join(output_dir, f"{basename}.{ext}")
+                os.replace(result["path"], final)
+                result["path"] = final
             downloaded += 1
             m3u_entries.append((f"{basename}.{ext}", artist, track_title))
             yield {
@@ -1216,16 +1258,23 @@ def process_playlist(
                 "source": used.name,
                 "source_name": used.label,
                 "attempts": attempts,
+                "search": search,
             }
         except Exception as e:
             failed += 1
+            if replacing:
+                _remove_quietly(req.target_path)
             yield {
                 "type": "track_error",
                 "index": playlist_index,
                 "query": query,
                 "error": str(e),
                 "attempts": attempts,
+                "search": search,
             }
+
+    for gone in sorted(set(retry or ()) - retried):
+        yield {"type": "warning", "message": f"{gone} is no longer in this list, so it was not retried."}
 
     playlist_file = None
     try:

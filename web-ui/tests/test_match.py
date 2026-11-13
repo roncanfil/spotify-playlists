@@ -142,3 +142,14 @@ def test_estimate_leaves_reported_values_and_unknown_lengths_alone():
     assert match.estimate(f, 266) is f
     g = file("a.mp3", 1_000, None, None)
     assert match.estimate(g, 0) is g
+
+
+def test_a_remix_is_searched_with_its_version_words_first():
+    t = track("Lady Gaga, SOFI TUKKER", "911 - Sofi Tukker Remix", 200)
+    assert match.search_text(t) == "Lady Gaga 911 - Sofi Tukker Remix"
+    assert match.queries(t) == ["lady gaga 911 sofi tukker remix", "lady gaga 911"]
+    # Guests still go; the version stays.
+    t = track("Adele", "Hello (feat. Someone) - Live at the BBC", 200)
+    assert match.queries(t)[0] == "adele hello live at the bbc"
+    # Remastered is not another version, so nothing changes.
+    assert match.search_text(track("Enya", "Orinoco Flow - Remastered", 266)) == "Enya Orinoco Flow"

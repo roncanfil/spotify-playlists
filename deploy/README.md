@@ -24,6 +24,13 @@ Set the music path to an absolute one, such as `/DATA/Media/Music` on CasaOS.
 The default is relative and CasaOS picks the project directory, so a relative
 path lands somewhere you did not choose.
 
+For the app's icon in CasaOS, open the app's Settings (the three dots on its
+tile) and paste this into the icon field:
+
+```
+https://raw.githubusercontent.com/roncanfil/spotify-playlists/main/web-ui/static/icon.png
+```
+
 Keep the `networks:` lines. The app reaches slskd and bgutil-provider by name,
 and that only works on a network of their own; on Docker's default `bridge`
 network, where CasaOS otherwise puts apps, the setup screen says it cannot

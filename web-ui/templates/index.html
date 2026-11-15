@@ -56,7 +56,9 @@
 
   /* ------------------------------------------------------------ base */
   *, *::before, *::after { box-sizing:border-box; }
-  html { -webkit-text-size-adjust:100%; }
+  /* clip, not hidden: nothing may pan the page sideways on a phone, and clip
+     leaves sticky positioning working. */
+  html { -webkit-text-size-adjust:100%; overflow-x:clip; }
   body {
     margin:0; background:var(--bg); color:var(--ink);
     font:430 15px/1.5 "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -331,8 +333,14 @@
   .linkrow .field > svg { left:15px; font-size:19px; }
   .linkrow .btn { height:56px; padding:0 22px; border-width:3px; font-size:14.5px; }
   @media (max-width: 480px) { .linkrow { flex-direction:column; } .linkrow .btn { width:100%; } }
-  .linkcard { margin-top:20px; display:grid; gap:16px; }
-  .linkcard .lc-head { display:flex; gap:16px; align-items:flex-end; min-width:0; }
+  /* minmax(0,…): a grid column otherwise grows to its widest unwrapped line (a
+     long song title), which pushed the page sideways on phones. */
+  .linkcard { margin-top:20px; display:grid; grid-template-columns:minmax(0, 1fr); gap:16px; }
+  .linkcard .lc-head { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; min-width:0; }
+  .linkcard .lc-who { display:flex; gap:16px; align-items:flex-end; min-width:0; flex:1 1 320px; }
+  /* A second Download at the top, so a long list need not be scrolled. */
+  .linkcard .go-top { flex:none; }
+  @media (max-width: 600px) { .linkcard .go-top { width:100%; } }
   .linkcard .art { width:104px; height:104px; object-fit:cover; flex:none; background:var(--surface-3); }
   .linkcard .art.ph { display:grid; place-items:center; color:var(--faint); }
   .linkcard .art.ph svg { font-size:28px; }
@@ -547,7 +555,7 @@
   .note svg { font-size:16px; margin-top:2px; color:var(--muted); }
   .note.warn svg { color:var(--warn); } .note.ok svg { color:var(--ok); }
   .note b { color:var(--ink); font-weight:750; }
-  .kv { display:grid; grid-template-columns:auto 1fr; gap:6px 18px; font-size:14px; margin:0 0 16px; }
+  .kv { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:6px 18px; font-size:14px; margin:0 0 16px; }
   .kv dt { color:var(--muted); margin:0; font-weight:650; } .kv dd { margin:0; font-weight:750; font-variant-numeric:tabular-nums; }
   .syncs .row { grid-template-columns:32px minmax(0, 1fr) auto; }
   .syncs .state { background:var(--blue); color:#fff; }
@@ -1147,20 +1155,21 @@ function renderLink(d, loading) {
   const syncBox = d.kind !== 'playlist' ? '' : `<label class="check"><input type="checkbox" id="link-sync" checked>
     <span>Keep in sync<small>${every ? `Checks Spotify every ${every} and downloads songs added since.`
       : 'Downloads songs added since whenever you press Sync now.'}</small></span></label>`;
-  card.innerHTML = `<div class="lc-head">${art}<div class="meta"><div class="nm">${esc(d.name)}</div>
-    <div class="sub">${sub}</div></div></div>${sample}${cut}
+  const top = d.kind === 'track' ? '' : '<button class="btn primary lg go-top" type="button" data-go>Download</button>';
+  card.innerHTML = `<div class="lc-head"><div class="lc-who">${art}<div class="meta"><div class="nm">${esc(d.name)}</div>
+    <div class="sub">${sub}</div></div></div>${top}</div>${sample}${cut}
     <p class="fine">Saves to <code>${esc(d.folder)}/</code> in your music folder${extra}.
       Songs you already have are skipped.</p>${syncBox}
-    <div class="actions"><button class="btn primary lg" id="link-go" type="button">Download</button>
+    <div class="actions"><button class="btn primary lg" id="link-go" type="button" data-go>Download</button>
       <span class="hint out-hint"></span></div>`;
-  $('link-go').addEventListener('click', downloadLink);
+  card.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', downloadLink));
   renderOutput();
 }
 
 async function downloadLink() {
   if (!linkData) return;
-  const b = $('link-go');
-  b.disabled = true; b.textContent = 'Queueing…';
+  const bs = [...$('link-card').querySelectorAll('[data-go]')];
+  bs.forEach(b => { b.disabled = true; b.textContent = 'Queueing…'; });
   try {
     const j = await api('/api/link/download',
       { link: linkData.link, bitrate: SETTINGS.bitrate, format: SETTINGS.format,
@@ -1170,7 +1179,7 @@ async function downloadLink() {
     showTab('queue');
   } catch (e) {
     flash(e.message, false);
-    b.disabled = false; b.textContent = 'Download';
+    bs.forEach(b => { b.disabled = false; b.textContent = 'Download'; });
   }
   poll();
 }

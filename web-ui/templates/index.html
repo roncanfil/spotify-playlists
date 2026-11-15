@@ -946,6 +946,9 @@ async function api(path, fields) {
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 function showTab(name) {
   curTab = name;
+  // Every tab opens at the top: the tabs share one page, so its scroll
+  // position would otherwise carry over from wherever the last tab was left.
+  window.scrollTo(0, 0);
   document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
   ['spotify', 'queue', 'settings'].forEach(v => $('view-' + v).classList.toggle('on', v === name));
   if (name === 'spotify' && spConnected && !spLoaded) loadSpotify();

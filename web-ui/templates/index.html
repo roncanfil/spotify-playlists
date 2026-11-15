@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
+<script>
+  // The appearance chosen in Settings (this browser only), set before the page
+  // paints so it never flashes the other one. Auto leaves it to the device.
+  try { var t = localStorage.getItem('sp-theme');
+    if (t === 'light' || t === 'dark') { document.documentElement.dataset.theme = t;
+      document.querySelector('meta[name=color-scheme]').content = t; } } catch (e) {}
+</script>
 <title>Spotify Playlists</title>
 <link rel="icon" type="image/png" href="/static/favicon.png">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
@@ -39,8 +46,9 @@
     --r-lg:0; --r-md:0; --r-sm:0;
     color-scheme: light;
   }
+  /* Dark: from the device unless Settings says Light, or always with Dark. */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg:#0c0d12; --surface:#14151c; --surface-2:#1a1c26; --surface-3:#262938;
       --ink:#f2f2f5; --ink-2:#c9cbd6; --muted:#9da1b5; --faint:#6b6f85;
       --line:#2a2d3c; --line-2:#f2f2f5;
@@ -56,6 +64,21 @@
       color-scheme: dark;
     }
   }
+  :root[data-theme="dark"] {
+      --bg:#0c0d12; --surface:#14151c; --surface-2:#1a1c26; --surface-3:#262938;
+      --ink:#f2f2f5; --ink-2:#c9cbd6; --muted:#9da1b5; --faint:#6b6f85;
+      --line:#2a2d3c; --line-2:#f2f2f5;
+      --blue:#2233c9; --accent:#8b98ff; --accent-hover:#a3adff; --accent-ink:#0c0d12;
+      --accent-soft:rgba(139,152,255,.12); --accent-ring:rgba(139,152,255,.35);
+      --hot:#ff5a2c; --hot-hover:#ff7247; --hot-ink:#0b0b0f;
+      --ok:#8b98ff; --ok-soft:rgba(139,152,255,.12);
+      --warn:#e8a33d; --warn-soft:rgba(232,163,61,.13);
+      --fail:#ff6b81; --fail-soft:rgba(255,107,129,.12); --fail-ring:rgba(255,107,129,.35); --fail-ink:#0c0d12;
+      --skip:#9da1b5; --skip-soft:rgba(157,161,181,.12);
+      --ready:#3ddc84;
+      --shadow-pop:0 28px 80px -20px rgba(0,0,0,.8);
+      color-scheme: dark;
+    }
 
   /* ------------------------------------------------------------ base */
   *, *::before, *::after { box-sizing:border-box; }
@@ -847,6 +870,16 @@
     </div>
 
     <div class="panel measure">
+      <h2>Appearance</h2>
+      <p class="lede">Saved in this browser only, so a phone and a computer can each have their own.</p>
+      <div class="opts three" id="themes" role="radiogroup" aria-label="Appearance">
+        <label class="opt" data-theme-opt="auto"><input type="radio" name="theme" value="auto"><span class="radio"></span><span class="txt"><b>Auto</b><span>Follows this device</span></span></label>
+        <label class="opt" data-theme-opt="light"><input type="radio" name="theme" value="light"><span class="radio"></span><span class="txt"><b>Light</b><span>White page</span></span></label>
+        <label class="opt" data-theme-opt="dark"><input type="radio" name="theme" value="dark"><span class="radio"></span><span class="txt"><b>Dark</b><span>Dark page</span></span></label>
+      </div>
+    </div>
+
+    <div class="panel measure">
       <h2>Audio sources</h2>
       <p class="lede">Each track is tried from the top down, and the first source that finds it
         wins. Applies to the whole server, from the next playlist that starts.</p>
@@ -1001,6 +1034,25 @@ document.querySelectorAll('#formats input').forEach(r =>
   r.addEventListener('change', () => { SETTINGS.format = r.value; saveSettings(); renderOutput(); }));
 document.querySelectorAll('#bitrates input').forEach(r =>
   r.addEventListener('change', () => { SETTINGS.bitrate = r.value; saveSettings(); renderOutput(); }));
+
+/* ------------------------------------------------------------ appearance */
+function currentTheme() {
+  try { const t = localStorage.getItem('sp-theme'); return t === 'light' || t === 'dark' ? t : 'auto'; }
+  catch (e) { return 'auto'; }
+}
+function applyTheme(t) {
+  const root = document.documentElement;
+  if (t === 'auto') delete root.dataset.theme; else root.dataset.theme = t;
+  document.querySelector('meta[name=color-scheme]').content = t === 'auto' ? 'light dark' : t;
+  try { if (t === 'auto') localStorage.removeItem('sp-theme'); else localStorage.setItem('sp-theme', t); } catch (e) {}
+  document.querySelectorAll('#themes .opt').forEach(l => {
+    const on = l.dataset.themeOpt === t;
+    l.classList.toggle('on', on);
+    l.querySelector('input').checked = on;
+  });
+}
+document.querySelectorAll('#themes input').forEach(r => r.addEventListener('change', () => applyTheme(r.value)));
+applyTheme(currentTheme());
 
 /* ------------------------------------------------------------ spotify */
 async function loadSpotify() {

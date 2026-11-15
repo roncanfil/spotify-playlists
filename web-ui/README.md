@@ -19,7 +19,7 @@ set up, and from YouTube otherwise.
   missed says why Soulseek missed. A failed song has Retry, and a song from
   YouTube has Try Soulseek: both open the search words to edit (add a remix
   name, fix a spelling) and queue that one song again.
-- Settings tab: output format, the audio sources (each Connected, Not set up,
+- Settings tab: Appearance (Auto, Light or Dark, kept per browser), output format, the audio sources (each Connected, Not set up,
   Not installed or Error, in the order they are tried, which you can change),
   the Soulseek account and sharing, and the yt-dlp updater.
 - A setup screen on first visit: Soulseek or YouTube first, and the Soulseek

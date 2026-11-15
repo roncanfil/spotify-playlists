@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
+<script>
+  // The appearance chosen in Settings (this browser only), set before the page
+  // paints so it never flashes the other one. Auto leaves it to the device.
+  try { var t = localStorage.getItem('sp-theme');
+    if (t === 'light' || t === 'dark') { document.documentElement.dataset.theme = t;
+      document.querySelector('meta[name=color-scheme]').content = t; } } catch (e) {}
+</script>
 <title>Sign in · Spotify Playlists</title>
 <link rel="icon" type="image/png" href="/static/favicon.png">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
@@ -17,11 +24,15 @@
     --fail:#c8102e; --fail-soft:rgba(200,16,46,.08);
     color-scheme: light;
   }
+  /* Dark: from the device unless Settings says Light, or always with Dark. */
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#0c0d12; --surface:#14151c; --ink:#f2f2f5; --muted:#9da1b5; --faint:#6b6f85; --line-2:#f2f2f5;
+    :root:not([data-theme="light"]) { --bg:#0c0d12; --surface:#14151c; --ink:#f2f2f5; --muted:#9da1b5; --faint:#6b6f85; --line-2:#f2f2f5;
       --blue:#2233c9; --accent:#8b98ff; --accent-ring:rgba(139,152,255,.35); --hot:#ff5a2c; --hot-hover:#ff7247;
       --fail:#ff6b81; --fail-soft:rgba(255,107,129,.12); color-scheme: dark; }
   }
+  :root[data-theme="dark"] { --bg:#0c0d12; --surface:#14151c; --ink:#f2f2f5; --muted:#9da1b5; --faint:#6b6f85; --line-2:#f2f2f5;
+      --blue:#2233c9; --accent:#8b98ff; --accent-ring:rgba(139,152,255,.35); --hot:#ff5a2c; --hot-hover:#ff7247;
+      --fail:#ff6b81; --fail-soft:rgba(255,107,129,.12); color-scheme: dark; }
   *, *::before, *::after { box-sizing:border-box; }
   body { margin:0; min-height:100vh; min-height:100dvh; display:grid; grid-template-rows:auto 1fr;
     background:var(--bg); color:var(--ink); font:430 15px/1.5 "Archivo", -apple-system, "Segoe UI", sans-serif;

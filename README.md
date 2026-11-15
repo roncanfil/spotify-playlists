@@ -1,4 +1,4 @@
-# Spotify playlists to MP3
+# Spotify Playlists
 
 Takes a Spotify playlist, album or song and produces a folder of tagged MP3s.
 Paste a Spotify link, connect your account, or upload a CSV. The audio comes
